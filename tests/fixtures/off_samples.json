@@ -1,0 +1,71 @@
+{
+  "8076809523547": {
+    "name": "Pesto Rosso 200g",
+    "source": "https://world.openfoodfacts.org/product/8076809523547",
+    "per": "100g",
+    "off_truth": {
+      "energy_kcal": 329.0,
+      "fat_g": 29.0,
+      "saturated_fat_g": 3.4,
+      "carbohydrates_g": 12.0,
+      "sugars_g": 7.8,
+      "protein_g": 3.8,
+      "salt_g": 2.8
+    },
+    "expected": {
+      "energy_kcal": 329.0,
+      "fat_g": 29.0,
+      "saturated_fat_g": 3.4,
+      "carbohydrates_g": 12.0,
+      "sugars_g": 7.8,
+      "protein_g": 3.8,
+      "salt_g": 2.8
+    }
+  },
+  "3046920029780": {
+    "name": "Excellence Noir Subtil Doux 70% Cacao",
+    "source": "https://world.openfoodfacts.org/product/3046920029780",
+    "per": "100g",
+    "off_truth": {
+      "energy_kcal": 610.0,
+      "fat_g": 48.0,
+      "saturated_fat_g": 29.0,
+      "carbohydrates_g": 33.0,
+      "sugars_g": 29.0,
+      "protein_g": 6.9,
+      "salt_g": 0.01
+    },
+    "expected": {
+      "energy_kcal": 610.0,
+      "fat_g": 48.0,
+      "saturated_fat_g": 29.0,
+      "carbohydrates_g": 33.0,
+      "sugars_g": 29.0,
+      "protein_g": 6.9,
+      "salt_g": 0.01
+    },
+    "note": "Label prints salt 0.05 g; OFF stores 0.01 g (within tolerance)."
+  },
+  "6902007505264": {
+    "name": "镇江香醋",
+    "source": "https://world.openfoodfacts.org/product/6902007505264",
+    "per": "100g",
+    "off_truth": {
+      "energy_kcal": 32.0,
+      "fat_g": 0.0,
+      "saturated_fat_g": 0.0,
+      "carbohydrates_g": 3.8,
+      "sugars_g": 1.1,
+      "protein_g": 3.8,
+      "salt_g": 1.9
+    },
+    "expected": {
+      "energy_kcal": 43,
+      "protein_g": 4.1,
+      "fat_g": 0,
+      "carbohydrates_g": 1.5,
+      "salt_g": 1.5
+    },
+    "note": "Importer sticker verified by eye against the photo. OFF stores 32 kcal / carbs 3.8 g for this barcode: OFF ground truth disagrees with the label."
+  }
+}

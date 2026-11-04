@@ -1,0 +1,37 @@
+{
+  "image": "yogurt.jpg",
+  "barcode": "021130077403",
+  "panel": {
+    "per": "serving",
+    "serving_text": "6 oz (170 g)",
+    "nutrients": {
+      "energy_kcal": 150,
+      "fat_g": 2,
+      "saturated_fat_g": 1,
+      "trans_fat_g": 0,
+      "cholesterol_mg": 10,
+      "sodium_mg": 85,
+      "carbohydrates_g": 27,
+      "fiber_g": 0,
+      "sugars_g": 20,
+      "added_sugars_g": 18,
+      "protein_g": 6,
+      "vitamin_d_mcg": 2,
+      "calcium_mg": 200,
+      "iron_mg": 0,
+      "potassium_mg": 260,
+      "vitamin_a_mcg": 130
+    }
+  },
+  "secondary": {
+    "ingredients_visible": "CULTURED PASTEURIZED MILK, SUGAR, MODIFIED CORNSTARCH, SOLIDS, KOSHER GELATIN, NATURAL FL ACID, POTASSIUM SORBATE (TO MAINTAIN ) ANNATTO (COLOR), VITAMIN A PALMITATE CONTAINS LIVE AND ACTIVE YOGURT CULTURES. CONTAINS: MILK. MAY CONTAIN: TREE NUTS (COCONUT)",
+    "known_inventions": [
+      "TREE HUTS",
+      "CREAM)",
+      "VITAMIN E",
+      "FIBER"
+    ],
+    "scored": false,
+    "note": "Right edge of the ingredients column is cut off in the photo; unverified text only."
+  }
+}

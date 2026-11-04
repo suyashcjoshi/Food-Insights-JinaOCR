@@ -137,6 +137,30 @@ telemetry           object    { endpoint, prompt_variant, prompt_tokens,
                                 completion_tokens, ocr_ms, cost_est }
 ```
 
+### Ground truth schema
+
+Every ground-truth record (`data/kitchen/<name>.truth.json` and each line of
+`data/off/manifest.jsonl`) has two tiers:
+
+```
+{ "image": ..., "barcode": ...,
+  "panel":     { "per": "serving"|"100g", "serving_text": ..., "nutrients": { ... } },
+  "secondary": { "ingredients_visible": ..., "known_inventions": [...],
+                 "scored": false, "note": ... } }
+```
+
+- `panel` is the Nutrition Facts panel: primary, and the only thing scored.
+  Accuracy numbers (smoke test, `score.py`, hammer comparison) read
+  `panel.nutrients` and nothing else. OFF records use `per: "100g"` with
+  `nutrients` from `nutriments` (`energy-kcal_100g`, `fat_100g`,
+  `saturated-fat_100g`, `carbohydrates_100g`, `sugars_100g`, `proteins_100g`,
+  `salt_100g`).
+- `secondary` is everything else (ingredients, allergens, claims). It is
+  never scored. It exists only for the invention check (probe check 10):
+  count words in the model's ingredients block that are not in
+  `ingredients_visible`, and flag hits on `known_inventions`. For OFF records
+  it is `{"scored": false}` unless there is something to record.
+
 ## 7. Phase 1 tasks (for the coding agent)
 
 Write results to `reports/<task>.md` + `reports/<task>.json`. Pass/fail is
@@ -187,7 +211,7 @@ Input: `data/kitchen/*.jpg` (Suyash adds five: clean, glossy/curved,
 stained, paper wrapper, non-English; plus `occluded.jpg` with a finger over
 the carbs row, `sideways.jpg`, `two_products.jpg`).
 For each: EXIF transpose → resize ≤1600 px → OCR (primary API) → parse →
-print `carbs_parsed` vs `carbs_pack` (from `data/kitchen/ground_truth.json`)
+print `carbs_parsed` vs `carbs_pack` (from `panel.nutrients` in `data/kitchen/<name>.truth.json`)
 → tokens, ms. PASS if ≥ 4/5 bucket photos parse carbs correctly. Record
 what the model did on occluded / sideways / two_products as prose.
 
