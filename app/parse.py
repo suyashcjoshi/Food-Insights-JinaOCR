@@ -9,11 +9,18 @@ the unit either after it (`27g`) or before it (`g 12`, German tables). That one 
 one-line-per-nutrient panels, table rows, glued single-line blobs (`Lípidos48 g- de las cuales ...`)
 and prose lines (`エネルギー43kcal、たんぱく質4.1g`). Gram/mg values must carry a unit; a bare number
 is never accepted (it is usually a calories or %DV column). Labels: EN/ES/DE/FR/IT/PT/JA.
+
+Labels are matched case- and accent-insensitively (`fold`). Decimal commas are decimals (`1,7` is
+1.7); nutrient values never use a thousands separator. When a row has several value columns the
+one under the `100 g` / `100 ml` header wins (`ParseResult.column`, `.basis`). `parse_suspect`
+flags a panel whose numbers contradict each other (kcal vs 4C+4P+9F, sugars > carbs, saturates >
+fat); `verified` requires it to be clear.
 """
 
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 
 # target unit of each key: kcal, g, mg or mcg
@@ -41,25 +48,26 @@ UNITS = {
 # (saturated fat before fat). Matched as whole words, case-insensitively.
 LABELS: dict[str, str] = {
     "energy_kcal": (
-        r"energy|energ[ií]a|energie|[eé]nergie|valor energ\w+tico|valeur [eé]nerg\w+tique|"
-        r"brennwert|calories(?!\s*from)|calorias|calorie|熱量|エネルギー"
+        r"energy|energ[ií]a|energie|[eé]nergie|valor energ\w+tico|valeurs? [eé]nerg\w+tiques?|"
+        r"brennwert|valor[ei] energ\w+tic\w+|valori energ\w+tici|"
+        r"calories(?!\s*from)|calorias|calorie|熱量|エネルギー"
     ),
     "saturated_fat_g": (
         r"saturated fat|saturates|saturated|acides gras satur\w+|gras satur\w+|satur\w+|"
         r"ges\w+ttigte fetts\w+ure\w*|ges\w+ttigte|[aá]cidos grasos saturados|"
         r"grasas saturadas|gorduras? satur\w+|l[ií]pidos satur\w+|saturadas|saturados|"
-        r"grassi saturi|acidi grassi saturi|saturi"
+        r"grassi saturi|acidi grassi saturi|saturi|飽和脂肪酸|飽和脂肪"
     ),
     "trans_fat_g": r"trans fat|trans",
     "fat_g": (
-        r"total fat|fat|lipides|graisses|mati\w+res grasses|fett|grasas?|grassi|"
+        r"total fat|fat|lipides|graisses?|mati\w+res? grasses?|fett|grasas?|grassi|"
         r"gorduras?|l[ií]pidos|lipidi|脂質"
     ),
     "cholesterol_mg": r"cholesterol|cholest\w+rol|colesterol",
     "sodium_mg": r"sodium|sodio|natrium|ナトリウム",
     "salt_g": r"salt|sel|salz|sal|sale|食塩相当量",
     "carbohydrates_g": (
-        r"total carbohydrates?|carbohydrates?|carbs|hidratos de carbono|hidratos|carbohidratos|"
+        r"total carbohydrates?|carbohydrates?|carbs|hidratos? (?:de )?carbono|hidratos|carbohidratos|"
         r"kohlenhydrate|glucides|gl[uú]cidos|carboidrati|炭水化物"
     ),
     "fiber_g": (
@@ -69,7 +77,7 @@ LABELS: dict[str, str] = {
     "sugars_g": (
         r"total sugars|sugars|sugar|sucres|zucker|az[uú]cares|a[cç][uú]cares|zuccheri|糖質|糖類"
     ),
-    "protein_g": r"proteins?|prot\w+ines?|eiwei\w+|prote[ií]nas?|proteine|たんぱく質|タンパク質",
+    "protein_g": r"proteins?|prot\w*?[iï]nes?|eiwei\w+|prote[ií]nas?|proteine|たんぱく質|タンパク質",
     "vitamin_d_mcg": r"vitamin d|vitamine d|vitamina d",
     "calcium_mg": r"calcium|calcio|c\w+lcio",
     "iron_mg": r"iron|fer|eisen|hierro|ferro",
@@ -79,18 +87,20 @@ LABELS: dict[str, str] = {
 LABELS = {k: v.replace(r"\w", r"[^\W\d_]") for k, v in LABELS.items()}
 # A label is a whole word, or (for glued OCR text) an Uppercase label glued onto a lowercase/digit.
 LABEL_RE = re.compile(
-    r"(?:(?<![^\W\d_])|(?-i:(?<=[a-z\d])(?=[A-ZÀ-Þ])))"
+    r"(?:(?<![A-Za-zÀ-ɏ])|(?-i:(?<=[a-z\d])(?=[A-ZÀ-Þ])))"
     + "(?:"
     + "|".join(f"(?P<{key}>{alt})" for key, alt in LABELS.items())
-    + r")(?![^\W\d_])",
+    + r")(?![A-Za-zÀ-ɏ])",
     re.IGNORECASE,
 )
 UNIT = r"mcg|µg|μg|ug|mg|kcal|kj|g"
 TOKEN_RE = re.compile(
-    rf"(?:(?P<u1>[-–]?\s*(?:{UNIT}))\s+)?(?P<num>\d+(?:[.,]\d+)?)"
+    rf"(?:(?P<u1>[-–]?\s*(?:{UNIT}))(?:\s+|(?:(?<=kcal)|(?<=kj))))?(?P<num>\d+(?:[.,]\d+)?)"
     rf"(?:\s*(?P<u2>{UNIT})(?![a-z])|(?!\d)(?!\s*%))",
     re.IGNORECASE,
 )
+# `Fat (g) 31.8 4.8`: the unit sits in the label and the values are bare
+LABEL_UNIT_RE = re.compile(r"^\s*[(\[]\s*(?P<unit>mcg|µg|μg|ug|mg|g)\s*[)\]]\s*:?", re.IGNORECASE)
 ADDED_SUGARS_RES = (
     re.compile(
         r"incl(?:udes|\.)?\s*(?P<num>\d+(?:[.,]\d+)?)\s*(?P<unit>g|mg)?\s*added sugars?",
@@ -116,6 +126,16 @@ PER_SERVING = re.compile(
     r"serving|portion|por[cç][aã]o|ra[cç][aã]o|raci[oó]n|cup|tasse", re.IGNORECASE
 )
 SERVING_RE = re.compile(r"serving size\s*:?\s*(.+)$", re.IGNORECASE)
+# the per-100 column header, and the value-column headers that can stand left of it
+COL100_RE = re.compile(r"(?<![\d.,])100\s*(?:g|gr|ml)(?![a-z])", re.IGNORECASE)
+COLUMN_HEADER_RE = re.compile(
+    r"\b(?:serving|portion|porcion|porcao|racao|bar|piece|cup|tasse)\b\s*\(?\s*"
+    r"(?:\d+(?:[.,]\d+)?\s*(?:g|ml)\)?)?|(?<![\d.,])\d+(?:[.,]\d+)?\s*(?:g|ml)(?![a-z])",
+    re.IGNORECASE,
+)
+# consistency check (4C + 4P + 9F vs the printed kcal): 20 % and at least 5 kcal apart is suspect
+KCAL_TOLERANCE = 0.20
+KCAL_NOISE = 5.0
 
 
 @dataclass
@@ -124,22 +144,52 @@ class ParseResult:
     energy_kj: float | None = None
     serving_text: str | None = None
     per: str = "serving"
+    basis: str = "unknown"  # 100g | 100ml | serving | unknown
+    column: int | None = None  # index of the 100 g / 100 ml value column, None if no such header
     unverified_text: str = ""
     edge_cutoff_suspected: bool = False
     energy_from_kj: bool = False  # kcal was derived from kJ; an explicit kcal row replaces it
+    suspect_reasons: list[str] = field(default_factory=list)
 
     @property
     def panel_found(self) -> bool:
         return "carbohydrates_g" in self.nutrients or "energy_kcal" in self.nutrients
 
     @property
+    def energy_converted(self) -> bool:
+        return self.energy_from_kj and "energy_kcal" in self.nutrients
+
+    @property
+    def parse_suspect(self) -> bool:
+        return bool(self.suspect_reasons)
+
+    @property
+    def flags(self) -> list[str]:
+        out = ["edge_cutoff_suspected"] if self.edge_cutoff_suspected else []
+        out += ["energy_converted"] if self.energy_converted else []
+        return out + (["parse_suspect", *self.suspect_reasons] if self.parse_suspect else [])
+
+    @property
     def verified(self) -> bool:
-        """Parsed from a panel AND no edge cut-off flag (index field `nutrients_verified`)."""
-        return self.panel_found and not self.edge_cutoff_suspected
+        """Panel parsed, nothing cut off, numbers consistent (index field `nutrients_verified`)."""
+        return self.panel_found and not self.edge_cutoff_suspected and not self.parse_suspect
 
 
 def _to_float(s: str) -> float:
+    """A comma in a nutrient value is always a decimal comma (`1,7` is 1.7)."""
     return float(s.replace(",", "."))
+
+
+def fold(s: str) -> str:
+    """Strip Latin accents (`énergie` -> `energie`), leave kana/kanji and `ß`/`ø` alone."""
+    out = []
+    for ch in s:
+        if ord(ch) < 0x250:
+            ch = "".join(
+                c for c in unicodedata.normalize("NFD", ch) if not unicodedata.combining(c)
+            )
+        out.append(ch)
+    return "".join(out)
 
 
 def normalize(md: str) -> list[str]:
@@ -175,29 +225,47 @@ def _cutoff(lines: list[str], raw: str) -> bool:
     return any(ln.endswith("-") or ln.count("(") > ln.count(")") for ln in lines)
 
 
-def _first_token(seg: str) -> tuple[float, str | None] | None:
-    m = TOKEN_RE.search(seg)
-    if not m:
-        return None
-    unit = m.group("u2") or m.group("u1")
-    return _to_float(m.group("num")), (unit.lower().lstrip("-– ") if unit else None)
-
-
 def _energy(seg: str, res: ParseResult) -> None:
-    """`1890 kJ / 448 kcal`, `kJ 1360`, `Calories 150`: kcal wins, kJ converts, bare number = kcal."""
-    kcal = kj = bare = None
+    """`1890 kJ / 448 kcal`, `kJ 1360`, `Calories 150`, and unitless pairs (`2252 539`, `188/45`).
+
+    kcal wins, kJ is stored separately and only converts (/ 4.184, flag `energy_converted`) when no
+    kcal is present. A bare number is kcal unless the text only mentions kJ. Two bare numbers whose
+    ratio is ~4.184 are a kJ/kcal pair whatever their order. With several columns the one under
+    the 100 g / 100 ml header is read (`res.column`).
+    """
+    col = res.column or 0
+    kcals: list[float] = []
+    kjs: list[float] = []
+    bare: list[float] = []
+    # two unit words in a row (`kJ kcal`, `(Kj/Kcal)`) are a column header, not units of the number
+    seg = re.sub(r"\(?\b(?:kj|kcal)\b[\s/]*\b(?:kj|kcal)\b\)?", " ", seg, flags=re.IGNORECASE)
     for m in TOKEN_RE.finditer(seg):
-        unit = (m.group("u2") or m.group("u1") or "").lower().lstrip("-– ")
+        u1, u2 = ((m.group(g) or "").lower().lstrip("-– ") for g in ("u1", "u2"))
+        # `kJ2030kcal 492`: a different unit glued after the number is the next number's header
+        unit = u1 if u1 and u2 and u1 != u2 else (u2 or u1)
         val = _to_float(m.group("num"))
         if unit == "kcal":
-            kcal = kcal if kcal is not None else val
+            kcals.append(val)
         elif unit == "kj":
-            kj = kj if kj is not None else val
-        elif not unit and bare is None and len(m.group("num")) <= 4:
-            bare = val
+            kjs.append(val)
+        elif not unit and len(m.group("num")) <= 4 and len(bare) < 2 * (col + 1):
+            bare.append(val)
+    kcal = kcals[col] if col < len(kcals) else None
+    kj = kjs[col] if col < len(kjs) else None
+    if kcal is None and kj is None and len(bare) >= 2 * (col + 1):
+        pair = bare[2 * col : 2 * col + 2]
+        if min(pair) > 0 and 3.9 <= max(pair) / min(pair) <= 4.4:
+            kj, kcal = max(pair), min(pair)
+            bare = []
+    if kcal is None and bare and col == 0:
+        lower = seg.lower()
+        if "kj" in lower and "kcal" not in lower and "cal" not in lower:
+            kj = kj if kj is not None else bare[0]
+        else:
+            kcal = bare[0]
     if kj is not None and res.energy_kj is None:
         res.energy_kj = kj
-    value, derived = (kcal if kcal is not None else bare), False
+    value, derived = kcal, False
     if value is None and kj is not None:
         value, derived = round(kj / KCAL_PER_KJ), True
     have = "energy_kcal" in res.nutrients
@@ -210,8 +278,28 @@ def _energy(seg: str, res: ParseResult) -> None:
         res.energy_from_kj = derived
 
 
+CONNECTORS = re.compile(
+    r"^(?:\s|[/:,.\-]|dont|davon|of which|whereof|di cui|de los cuales|de las cuales|dos quais|das quais|"
+    r"including|incl|うち|内)*$",
+    re.IGNORECASE,
+)
+
+
+def _run_end(matches: list[re.Match], ln: str, i: int) -> int:
+    """Index of the last label of a run naming one nutrient in several languages
+    (`Hidratos de carbono / Carboidrati`): same key, only connectors between."""
+    while (
+        i + 1 < len(matches)
+        and matches[i + 1].lastgroup == matches[i].lastgroup
+        and CONNECTORS.match(ln[matches[i].end() : matches[i + 1].start()])
+    ):
+        i += 1
+    return i
+
+
 def _scan_line(ln: str, res: ParseResult) -> None:
     matches = list(LABEL_RE.finditer(ln))
+    claimed: set[int] = set()  # start offsets of tokens already given to a label
     for i, m in enumerate(matches):
         key = m.lastgroup
         end = matches[i + 1].start() if i + 1 < len(matches) else len(ln)
@@ -219,11 +307,40 @@ def _scan_line(ln: str, res: ParseResult) -> None:
         if key == "energy_kcal":
             _energy(seg, res)
             continue
-        if key in res.nutrients:
+        toks = list(TOKEN_RE.finditer(seg))
+        offset = m.end()
+        r = _run_end(matches, ln, i)
+        if (
+            not toks
+            and r + 1 < len(matches)
+            and CONNECTORS.match(ln[matches[r].end() : matches[r + 1].start()])
+        ):
+            # `Fat of which saturates | 30.9`: two labels, one value. It belongs to the first label.
+            nxt = matches[r + 1]
+            if nxt.lastgroup != "energy_kcal":
+                nr = _run_end(matches, ln, r + 1)
+                nend = matches[nr + 1].start() if nr + 1 < len(matches) else len(ln)
+                offset = matches[nr].end()
+                seg = ln[offset:nend]
+                toks = list(TOKEN_RE.finditer(seg))
+        col = res.column or 0
+        if len(toks) <= col or key in res.nutrients:
+            continue  # the row has no value in the per-100 column: never fall back to another one
+        tok_m = toks[col]
+        pos = offset + tok_m.start()
+        if pos in claimed:
             continue
-        tok = _first_token(seg)
-        if tok and tok[1] in TO_GRAMS:  # gram/mg values always print a unit; skip a bare number
-            res.nutrients[key] = _convert(tok[0], tok[1], key)
+        unit = (tok_m.group("u2") or tok_m.group("u1") or "").lower().lstrip("-– ")
+        if not unit and col:  # later columns repeat the unit printed once (`g 30.9 4.6`)
+            unit = next(
+                ((t.group("u2") or t.group("u1") or "").lower().lstrip("-– ") for t in toks[:col]),
+                "",
+            )
+        if not unit and (lu := LABEL_UNIT_RE.match(ln[m.end() :])):
+            unit = lu.group("unit").lower()  # unit given in the label, e.g. `Fat (g) 31.8`
+        if unit in TO_GRAMS:  # gram/mg values always print a unit; skip a bare number
+            res.nutrients[key] = _convert(_to_float(tok_m.group("num")), unit, key)
+            claimed.add(pos)
 
 
 def _ends_with_label(ln: str) -> bool:
@@ -234,6 +351,36 @@ def _ends_with_label(ln: str) -> bool:
     for m in LABEL_RE.finditer(ln):
         last = m
     return last is not None and len(ln) - last.end() <= 3
+
+
+def _find_column(ln: str, res: ParseResult) -> None:
+    """The first `100 g` / `100 ml` header fixes which value column to read in every row."""
+    hm = COL100_RE.search(ln)
+    if hm is None or res.column is not None:
+        return
+    left = ln[: hm.start()]
+    res.column = sum(
+        1
+        for m in COLUMN_HEADER_RE.finditer(left)
+        if "%" not in left[max(0, m.start() - 6) : m.start()]
+    )
+    res.basis = "100ml" if "ml" in hm.group().lower() else "100g"
+
+
+def _check_consistency(res: ParseResult) -> None:
+    n = res.nutrients
+    kcal, carbs, protein, fat = (
+        n.get(k) for k in ("energy_kcal", "carbohydrates_g", "protein_g", "fat_g")
+    )
+    if None not in (kcal, carbs, protein, fat):
+        est = 4 * carbs + 4 * protein + 9 * fat
+        diff = abs(kcal - est)
+        if diff > KCAL_NOISE and diff > KCAL_TOLERANCE * est:
+            res.suspect_reasons.append("kcal_mismatch")
+    if None not in (n.get("sugars_g"), carbs) and n["sugars_g"] > carbs + 0.05:
+        res.suspect_reasons.append("sugars_gt_carbs")
+    if None not in (n.get("saturated_fat_g"), fat) and n["saturated_fat_g"] > fat + 0.05:
+        res.suspect_reasons.append("saturates_gt_fat")
 
 
 def parse(md: str) -> ParseResult:
@@ -254,6 +401,8 @@ def parse(md: str) -> ParseResult:
             continue
         if res.serving_text is None and (m := SERVING_RE.search(ln)):
             res.serving_text = m.group(1).strip()
+        ln = fold(ln)
+        _find_column(ln, res)
         if pending:
             ln, pending = f"{pending} {ln}", ""
         if _ends_with_label(ln):
@@ -275,7 +424,12 @@ def parse(md: str) -> ParseResult:
     if not res.unverified_text and not res.panel_found:
         res.unverified_text = (md or "").strip()  # no panel in frame: all of it is unverified
 
-    first_100, first_serv = PER_100.search(md or ""), PER_SERVING.search(md or "")
-    if first_100 and (not first_serv or first_100.start() < first_serv.start()):
-        res.per = "100g"
+    if res.column is None:
+        first_100, first_serv = PER_100.search(md or ""), PER_SERVING.search(md or "")
+        if first_100 and (not first_serv or first_100.start() < first_serv.start()):
+            res.basis = "100ml" if "ml" in first_100.group().lower() else "100g"
+        elif first_serv:
+            res.basis = "serving"
+    res.per = "100g" if res.basis.startswith("100") else "serving"
+    _check_consistency(res)
     return res

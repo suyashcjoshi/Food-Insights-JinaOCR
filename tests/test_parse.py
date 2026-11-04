@@ -177,3 +177,33 @@ def test_explicit_kcal_row_beats_kj_conversion():
 def test_digits_glued_to_a_label_are_not_part_of_the_label():
     assert parse("Sal0,05 g").nutrients["salt_g"] == 0.05
     assert parse("dos quais saturados29 g").nutrients["saturated_fat_g"] == 29
+
+
+def test_two_labels_one_value_goes_to_the_first_label():
+    """`Fat of which saturates | 7,0 g` is a merged row: the value is the fat, not the saturates."""
+    res = parse("Grasas de las cuales, saturadas 7,0 g 2,8 g 4 %")
+    assert res.nutrients == {"fat_g": 7.0}
+    res = parse("Matières grasses dont acides gras saturés g 30.9 4.6 7%")
+    assert res.nutrients.get("fat_g") == 30.9
+    assert "saturated_fat_g" not in res.nutrients
+
+
+def test_unit_in_the_label_bare_values():
+    res = parse("Fat (g) 31.8 4.8 7\nof which Saturates (g) 11.0 1.7 9\nSalt (g) 0.071 0.011 0")
+    assert res.nutrients == {"fat_g": 31.8, "saturated_fat_g": 11.0, "salt_g": 0.071}
+
+
+def test_unitless_kj_kcal_pair():
+    assert parse("Energy (kJ/ kcal) 2229 / 534 335 / 80 4").nutrients["energy_kcal"] == 534
+    assert parse("Energie kJ kcal 2252 539 336 80 4%").nutrients["energy_kcal"] == 539
+    assert parse("Energie (Kj/Kcal): 188/45").nutrients["energy_kcal"] == 45
+
+
+def test_kcal_glued_to_number_and_diaeresis_label():
+    res = parse("Valeurs énergétiques Kcal97Proteïnes8,0 gCarbohydrates9,4 gLipides3,0 g")
+    assert res.nutrients == {
+        "energy_kcal": 97,
+        "protein_g": 8.0,
+        "carbohydrates_g": 9.4,
+        "fat_g": 3.0,
+    }

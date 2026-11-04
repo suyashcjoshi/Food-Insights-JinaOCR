@@ -1,0 +1,93 @@
+{
+ "3017620425035": {
+  "name": "Nutella",
+  "lang": "en",
+  "truth": {
+   "energy_kcal": 539.0,
+   "fat_g": 30.9,
+   "saturated_fat_g": 10.6,
+   "carbohydrates_g": 57.5,
+   "sugars_g": 56.3,
+   "protein_g": 6.3,
+   "salt_g": 0.107
+  }
+ },
+ "5449000000996": {
+  "name": "Coca-Cola Original",
+  "lang": "de",
+  "truth": {
+   "energy_kcal": 42.4,
+   "fat_g": 0.0,
+   "saturated_fat_g": 0.0,
+   "carbohydrates_g": 10.6,
+   "sugars_g": 10.6,
+   "protein_g": 0.0,
+   "salt_g": 0.0
+  }
+ },
+ "5411188116592": {
+  "name": "Coconut",
+  "lang": "pt",
+  "truth": {
+   "energy_kcal": 20.0,
+   "fat_g": 1.0,
+   "saturated_fat_g": 0.9,
+   "carbohydrates_g": 2.7,
+   "sugars_g": 1.9,
+   "protein_g": 0.1,
+   "salt_g": 0.1175
+  }
+ },
+ "8076809513753": {
+  "name": "Barilla PESTO alla GENOVESE",
+  "lang": "en",
+  "truth": {
+   "energy_kcal": 492.0,
+   "fat_g": 47.0,
+   "saturated_fat_g": 5.3,
+   "carbohydrates_g": 11.0,
+   "sugars_g": 5.0,
+   "protein_g": 4.7,
+   "salt_g": 3.2
+  }
+ },
+ "20995553": {
+  "name": "Шоколад 85% какаова маса",
+  "lang": "de",
+  "truth": {
+   "energy_kcal": 554.0,
+   "fat_g": 44.2,
+   "saturated_fat_g": 26.7,
+   "carbohydrates_g": 19.9,
+   "sugars_g": 12.7,
+   "protein_g": 11.5,
+   "salt_g": 0.03
+  }
+ },
+ "5053990156009": {
+  "name": "Pringles Original",
+  "lang": "it",
+  "truth": {
+   "energy_kcal": 528.0,
+   "fat_g": 31.0,
+   "saturated_fat_g": 3.0,
+   "carbohydrates_g": 54.0,
+   "sugars_g": 0.9,
+   "protein_g": 6.2,
+   "salt_g": 1.0
+  }
+ },
+ "8000500310427": {
+  "name": "Biscuits NUTELLA Biscuits Noisettes et Cacao x22 - 304g",
+  "lang": "pt",
+  "truth": {
+   "energy_kcal": 515.0,
+   "fat_g": 24.8,
+   "saturated_fat_g": 11.5,
+   "carbohydrates_g": 64.0,
+   "sugars_g": 35.8,
+   "protein_g": 7.9,
+   "salt_g": 0.559
+  }
+ }
+}
