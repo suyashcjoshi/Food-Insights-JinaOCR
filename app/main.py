@@ -14,8 +14,9 @@ from typing import Annotated
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
-from app import eis, es, pipeline
+from app import eis, es, off, pipeline
 from app.allergens import NAMES
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -145,6 +146,48 @@ async def doc(doc_id: str) -> dict:
     if found is None:
         raise HTTPException(404, "no such capture")
     return found
+
+
+class DocPatch(BaseModel):
+    """Fields a person may correct on a capture. Only the ones sent are changed; empty clears."""
+
+    product_name: str | None = None
+    language: str | None = None
+    barcode: str | None = None
+
+
+@app.patch("/api/doc/{doc_id}")
+async def patch_doc(doc_id: str, patch: DocPatch) -> dict:
+    """Edit name, language or barcode. A new barcode re-runs the Open Food Facts cross-check."""
+    sent = patch.model_fields_set
+    updates: dict = {}
+    if "product_name" in sent:
+        updates["product_name"] = (patch.product_name or "").strip()[:200] or None
+    if "language" in sent:
+        lang = (patch.language or "").strip().lower()
+        if lang and not (2 <= len(lang) <= 3 and lang.isalpha()):
+            raise HTTPException(400, "language must be a two or three letter code, like en or fr")
+        updates["language"] = lang or None
+    if "barcode" in sent:
+        code = "".join(ch for ch in (patch.barcode or "") if ch.isdigit())
+        if code and not off.valid_barcode(code):
+            raise HTTPException(400, "That barcode doesn't pass its check digit. Check the digits.")
+        updates["barcode"] = code or None
+    found = await asyncio.to_thread(es.get_doc, doc_id)
+    if found is None:
+        raise HTTPException(404, "no such capture")
+    retry = found.get("off_match", {}).get("status") == "error"  # "Try again" after an OFF outage
+    if "barcode" in updates and (updates["barcode"] != found.get("barcode") or retry):
+        n = found.get("nutrients", {})
+        updates["off_match"] = await asyncio.to_thread(
+            off.cross_check, updates["barcode"], n.get("carbohydrates_g"), n.get("basis", "unknown")
+        )
+    if updates:
+        await asyncio.to_thread(es.update_doc, doc_id, updates)
+    return {
+        k: updates.get(k, found.get(k))
+        for k in ("product_name", "language", "barcode", "off_match")
+    }
 
 
 (ROOT / "data" / "captures").mkdir(parents=True, exist_ok=True)

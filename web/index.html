@@ -2,171 +2,198 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
   <title>Food Insights</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="top">
-    <div class="brand">
-      <h1>Food Insights</h1>
-      <p>Read the label. <strong>Never advises.</strong></p>
-    </div>
-    <nav id="tabs" aria-label="Views">
-      <button data-view="capture" class="active">Capture</button>
-      <button data-view="result" disabled>Result</button>
-      <button data-view="library">Library</button>
-    </nav>
-  </header>
-
+<div id="app">
   <main>
-    <!-- 1. CAPTURE -->
-    <section id="view-capture" class="view">
-      <div class="grid two">
-        <form id="capture-form" class="card" autocomplete="off">
-          <h2>Photograph a label</h2>
-          <label class="drop" id="drop">
-            <input type="file" id="file" name="image" accept="image/*" capture="environment">
-            <img id="preview" alt="" hidden>
-            <span id="drop-hint">Tap to take a photo or choose one.<br><small>JPEG or PNG, any size. It is rotated upright and shrunk to 1600&nbsp;px before it is read.</small></span>
-          </label>
+    <!-- Capture -->
+    <section id="screen-capture" class="screen" aria-label="Capture">
+      <header class="topbar">
+        <h1>Food Insights</h1>
+        <button id="dev-open" class="icon" type="button" aria-label="Developer settings">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        </button>
+      </header>
 
-          <div class="row">
-            <label>Barcode <small>(optional, cross-checks Open Food Facts)</small>
-              <input type="text" id="barcode" inputmode="numeric" placeholder="3017620425035">
-            </label>
-            <label>Language of the pack <small>(you set it, the model never guesses)</small>
-              <select id="language">
-                <option value="">Not set</option>
-                <option value="en">English</option><option value="fr">Français</option>
-                <option value="es">Español</option><option value="pt">Português</option>
-                <option value="de">Deutsch</option><option value="it">Italiano</option>
-                <option value="ja">日本語</option>
-              </select>
-            </label>
-          </div>
-          <label>Product name <small>(optional)</small>
-            <input type="text" id="product-name" placeholder="Greek yogurt, vanilla">
-          </label>
-          <details class="adv">
-            <summary>Prompt</summary>
-            <select id="prompt"></select>
-            <small id="prompt-text"></small>
-          </details>
-
-          <button type="submit" id="read-btn" class="primary" disabled>Read label</button>
-          <p id="status" class="status" role="status"></p>
-        </form>
-
-        <aside class="card guide">
-          <h2>Framing guide</h2>
-          <p>The model reads what is in the frame and <em>invents</em> what is cut off. Framing is your job; nothing here fixes a bad photo.</p>
-          <ul>
-            <li><b>Fill the frame</b> with the Nutrition Facts panel. Keep the whole table in view, edges included.</li>
-            <li><b>Flat and sharp.</b> Press creased wrappers flat, avoid glare and shadow across the numbers.</li>
-            <li><b>Upright.</b> A sideways photo makes the model loop. We rotate by EXIF, but check it.</li>
-            <li><b>One product</b> per photo.</li>
-          </ul>
-          <p class="fine">The first read after a quiet period can take two to three minutes while the model wakes up.</p>
-        </aside>
+      <div class="finder" id="finder">
+        <i class="mark tl"></i><i class="mark tr"></i><i class="mark bl"></i><i class="mark br"></i>
+        <img id="preview" alt="The photo you chose" hidden>
+        <p id="finder-hint">Fit the whole label in the frame</p>
       </div>
-    </section>
+      <p class="caption center">Reads the label, never advises.</p>
+      <button id="why-open" class="link" type="button">Why framing matters</button>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
 
-    <!-- 2. RESULT -->
-    <section id="view-result" class="view" hidden>
-      <div class="grid result">
-        <figure class="card shot">
-          <img id="shot" alt="The photographed label">
-          <figcaption>Source photo. Check every number against it.</figcaption>
-        </figure>
-
-        <div class="stack">
-          <article class="card" id="panel-card">
-            <header class="card-head">
-              <h2>Nutrition panel</h2>
-              <span id="verified-badge" class="badge"></span>
-            </header>
-            <p id="basis-line" class="basis"></p>
-            <div id="carb-hero" class="hero"></div>
-            <table class="nutrients" id="nutrients"><tbody></tbody></table>
-            <ul id="flags" class="flags"></ul>
-            <div id="off-chip" class="chip-line"></div>
-          </article>
-
-          <article class="card unverified" id="unverified-card">
-            <header class="card-head">
-              <h2>Unverified text <span class="dot">·</span> check the pack</h2>
-            </header>
-            <p class="fine">Ingredients and allergens as the model read them. Text cut off at the frame edge can be invented, so none of this is parsed into fields.</p>
-            <pre id="unverified-text"></pre>
-            <div class="allergens">
-              <h3>Allergen mentions <span class="tag">as read</span></h3>
-              <div id="allergen-chips" class="kinds"></div>
-              <p class="fine"><b>Contains</b>: named outside a “may contain” phrase. <b>May contain</b>: named only in one. Keywords found in the text above (14 EU-regulated allergens, en/fr/es/pt/de/it). Not a safety check.</p>
-            </div>
-          </article>
-
-          <p id="telemetry" class="telemetry"></p>
-          <p id="stored" class="fine"></p>
-
-          <details class="card raw" id="raw">
-            <summary>Raw view</summary>
-            <div class="raw-tabs">
-              <button data-raw="output" class="active">Model output</button>
-              <button data-raw="prompt">Prompt</button>
-              <button data-raw="request">Exact request</button>
-            </div>
-            <pre id="raw-body"></pre>
-            <div class="row" id="reread-row">
-              <button type="button" id="reread" class="ghost"></button>
-              <small>Re-reads the same photo with the other prompt. It is not stored.</small>
-            </div>
-          </details>
-
-          <div class="row">
-            <button type="button" id="again" class="ghost">Read another label</button>
-            <button type="button" id="to-library" class="ghost">Open library</button>
-          </div>
+      <div class="actions">
+        <button id="primary" class="primary" type="button">Take photo</button>
+        <div class="row2">
+          <button id="choose" class="text" type="button">Choose from library</button>
+          <button id="scan" class="text" type="button">Scan barcode (optional)</button>
         </div>
       </div>
     </section>
 
-    <!-- 3. LIBRARY -->
-    <section id="view-library" class="view" hidden>
-      <form id="search-form" class="card searchbar" autocomplete="off">
-        <input type="search" id="q" placeholder="Search products and label text, e.g. almond, Haselnuss, cacahuete">
-        <select id="f-language" aria-label="Language"><option value="">Any language</option></select>
-        <select id="f-kind" aria-label="Allergen kind">
-          <option value="">Contains or may contain</option>
-          <option value="contains">Contains only</option>
-          <option value="may_contain">May contain only</option>
-        </select>
-        <label class="check"><input type="checkbox" id="f-verified"> Verified panels only</label>
-        <button type="submit" class="primary">Search</button>
-      </form>
-
-      <div class="grid library">
-        <aside class="card facets">
-          <h2>Allergen mentions <span class="tag">as read</span></h2>
-          <p class="fine">Captures whose unverified text names the allergen, split into <span class="n contains">contains</span> and <span class="n may">may contain</span>. Click a name to filter.</p>
-          <div id="facet-allergens" class="facet-list"></div>
-          <h2>Languages</h2>
-          <div id="facet-languages" class="facet-list"></div>
-        </aside>
-        <div>
-          <p id="lib-summary" class="fine"></p>
-          <div id="cards" class="cards"></div>
+    <!-- Library -->
+    <section id="screen-library" class="screen" aria-label="Library" hidden>
+      <div class="libhead">
+        <input id="q" type="search" placeholder="Search labels, e.g. peanut" aria-label="Search labels" autocomplete="off" enterkeyhint="search">
+        <div id="chips" class="chips" role="radiogroup" aria-label="Filter labels"></div>
+      </div>
+      <div class="scroll" id="lib-scroll">
+        <p id="lib-note" class="caption"></p>
+        <div id="grid" class="grid"></div>
+        <div id="empty" class="empty" hidden>
+          <p id="empty-text">No labels yet. Photograph one to start.</p>
+          <button id="empty-go" class="primary" type="button">Photograph a label</button>
         </div>
+        <section id="allergens" class="alg" hidden>
+          <h2>Allergen mentions, as read</h2>
+          <div id="alg-list"></div>
+          <p class="caption">Strong bar: contains. Pale bar: may contain. Tap a name or a bar to filter.</p>
+          <button id="alg-clear" class="text left" type="button" hidden>Clear allergen filter</button>
+        </section>
+        <footer class="foot">
+          <svg class="elastic" viewBox="0 0 40 12" width="40" height="12" role="img" aria-label="Elastic"><rect x="0" y="0" width="8" height="12" rx="2" fill="#FEC514"/><rect x="8" y="0" width="8" height="12" rx="2" fill="#F04E98"/><rect x="16" y="0" width="8" height="12" rx="2" fill="#1BA9F5"/><rect x="24" y="0" width="8" height="12" rx="2" fill="#00BFB3"/><rect x="32" y="0" width="8" height="12" rx="2" fill="#343741"/></svg>
+          <p>Contains data from Open Food Facts (ODbL). OCR by jina-ocr-v1 on Elastic Inference Service.</p>
+        </footer>
       </div>
     </section>
   </main>
 
-  <footer>
-    <p>Reads the label, never advises: it does not compute a dose or suggest what to eat.
-    Nutrition data cross-checked against <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a> (ODbL).
-    OCR by <code>jina-ocr-v1</code> on the Elastic Inference Service.</p>
-  </footer>
+  <nav class="tabs" aria-label="Main">
+    <button type="button" data-tab="capture" aria-current="page">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+      <span>Capture</span>
+    </button>
+    <button type="button" data-tab="library">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>
+      <span>Library</span>
+    </button>
+  </nav>
 
-  <script src="app.js"></script>
+  <!-- Result sheet: full height over whatever is open -->
+  <div id="sheet-result" class="sheet full" role="dialog" aria-modal="true" aria-label="Result" hidden>
+    <div class="sheet-bar">
+      <button id="r-back" class="icon" type="button" aria-label="Back">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+    </div>
+    <div class="sheet-scroll" id="r-scroll">
+      <div class="rhead">
+        <img id="r-thumb" class="thumb" alt="The photographed label">
+        <div class="rhead-text">
+          <input id="r-name" class="name" type="text" placeholder="Add name" aria-label="Product name" maxlength="200" autocomplete="off">
+          <p id="r-read" class="secondary"></p>
+        </div>
+      </div>
+      <div class="chiprow">
+        <div id="r-xchip" class="xchip"></div>
+        <label class="langchip"><span class="sr">Language of the pack</span>
+          <select id="r-lang" aria-label="Language of the pack">
+            <option value="">Language not set</option>
+            <option value="en">English</option><option value="fr">French</option>
+            <option value="es">Spanish</option><option value="pt">Portuguese</option>
+            <option value="de">German</option><option value="it">Italian</option>
+            <option value="ja">Japanese</option>
+          </select>
+        </label>
+      </div>
+      <p id="r-msg" class="msg" role="status" hidden></p>
+
+      <div id="r-hero" class="hero"></div>
+      <p id="r-basis" class="secondary basis"></p>
+
+      <section class="card" aria-label="Nutrition panel">
+        <div class="card-head"><h2>Nutrition panel</h2><span id="r-verified" class="verified"></span></div>
+        <div id="r-rows" class="rows"></div>
+        <button id="r-more" class="text left" type="button" hidden>More</button>
+      </section>
+      <p id="r-adds" class="adds"></p>
+      <ul id="r-flags" class="flags"></ul>
+
+      <section class="card amber" aria-label="Unverified text">
+        <h2>Unverified, check the pack</h2>
+        <p id="r-unv" class="unv clamp"></p>
+        <button id="r-unv-more" class="text left" type="button" hidden>Show all</button>
+        <p class="caption amber-ink">Allergen mentions, as read</p>
+        <div class="kind"><span class="kind-label">Contains</span><div id="r-contains" class="chips wrap"></div></div>
+        <div class="kind"><span class="kind-label">May contain</span><div id="r-may" class="chips wrap"></div></div>
+        <p class="caption amber-ink">Keywords found in the text above. Not a safety check.</p>
+      </section>
+
+      <p id="r-telemetry" class="caption"></p>
+      <p id="r-stored" class="caption"></p>
+
+      <details id="r-raw" class="raw">
+        <summary>Show raw</summary>
+        <div class="tabs2" role="tablist">
+          <button type="button" role="tab" data-raw="output" aria-selected="true">Output</button>
+          <button type="button" role="tab" data-raw="request" aria-selected="false">Request</button>
+        </div>
+        <pre id="r-raw-body"></pre>
+      </details>
+
+      <section id="r-dev" class="card dev" hidden>
+        <h2>Developer</h2>
+        <p id="r-dev-prompt" class="secondary"></p>
+        <button id="r-reread" class="text left" type="button"></button>
+      </section>
+      <div class="spacer"></div>
+    </div>
+    <div class="sheet-actions">
+      <button id="r-again" class="primary" type="button">Read another label</button>
+      <button id="r-library" class="text" type="button">Open in library</button>
+    </div>
+  </div>
+
+  <!-- Small sheets -->
+  <div id="backdrop" class="backdrop" hidden></div>
+
+  <div id="sheet-why" class="sheet low" role="dialog" aria-modal="true" aria-labelledby="why-title" hidden>
+    <h2 id="why-title">Why framing matters</h2>
+    <ul class="plain">
+      <li>Whole label in the frame.</li>
+      <li>Flat and sharp.</li>
+      <li>Upright, one product.</li>
+    </ul>
+    <button class="primary close" type="button">Got it</button>
+  </div>
+
+  <div id="sheet-dev" class="sheet low" role="dialog" aria-modal="true" aria-labelledby="dev-title" hidden>
+    <h2 id="dev-title">Developer</h2>
+    <label class="switch"><input id="dev-toggle" type="checkbox" role="switch"><span>Show developer tools</span></label>
+    <p class="secondary">Shows the prompt choice here, and the exact request and a re-read button on each result. Off by default.</p>
+    <div id="dev-prompt-wrap" hidden>
+      <label for="prompt">Prompt</label>
+      <select id="prompt"></select>
+      <p id="prompt-text" class="secondary"></p>
+    </div>
+    <button class="primary close" type="button">Done</button>
+  </div>
+
+  <div id="sheet-barcode" class="sheet low" role="dialog" aria-modal="true" aria-labelledby="bc-title" hidden>
+    <h2 id="bc-title">Barcode</h2>
+    <p class="secondary" id="bc-help">Type the digits under the barcode. Open Food Facts uses it to double-check the carbs.</p>
+    <input id="bc-input" type="text" inputmode="numeric" autocomplete="off" placeholder="3017620425035" aria-label="Barcode digits">
+    <p id="bc-error" class="msg" role="alert" hidden></p>
+    <button id="bc-scan" class="text left" type="button" hidden>Scan from a photo</button>
+    <div class="row2">
+      <button id="bc-clear" class="text" type="button">Remove barcode</button>
+      <button id="bc-save" class="primary small" type="button">Save barcode</button>
+    </div>
+  </div>
+
+  <input id="cam" type="file" accept="image/*" capture="environment" hidden>
+  <input id="pick" type="file" accept="image/*" hidden>
+  <input id="bc-photo" type="file" accept="image/*" capture="environment" hidden>
+</div>
+<script src="app.js"></script>
 </body>
 </html>

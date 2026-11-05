@@ -171,7 +171,7 @@ def _query(q: str, filters: list[dict]) -> dict:
     return {"bool": {"must": must, "filter": filters}}
 
 
-def search(
+def _search(
     q: str = "",
     allergens: list[str] | None = None,
     language: str | None = None,
@@ -220,7 +220,7 @@ def shape_allergen_buckets(buckets: list[dict]) -> list[dict]:
     return out
 
 
-def aggregate(
+def _aggregate(
     q: str = "",
     allergens: list[str] | None = None,
     language: str | None = None,
@@ -259,3 +259,23 @@ def aggregate(
             for b in aggs["verified"]["buckets"]
         },
     }
+
+
+EMPTY_AGGS = {"total": 0, "allergens": [], "languages": [], "verified": {}}
+
+
+def search(*args, **kwargs) -> dict:
+    """Keyword search (see `_search`). Before the first capture there is no index: that is an empty
+    library, not an error."""
+    try:
+        return _search(*args, **kwargs)
+    except NotFoundError:
+        return {"total": 0, "hits": []}
+
+
+def aggregate(*args, **kwargs) -> dict:
+    """Counts for the Library panel (see `_aggregate`); an empty library before the first capture."""
+    try:
+        return _aggregate(*args, **kwargs)
+    except NotFoundError:
+        return dict(EMPTY_AGGS)

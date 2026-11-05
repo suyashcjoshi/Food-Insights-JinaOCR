@@ -422,3 +422,64 @@ def test_a_503_counts_as_a_failure_for_the_breaker(tmp_path, monkeypatch):
     assert off._breaker["fails"] == 1
     assert off.lookup("3017620425035", _client(404)) is None  # a clean 404 resets it
     assert off._breaker["fails"] == 0
+
+
+# --- editing a capture and the empty library ----------------------------------------------------
+
+
+@pytest.fixture
+def stored(api, monkeypatch):
+    """A saved capture the edit endpoint can find; records what was written."""
+    doc = {"id": "abc", "barcode": None, "product_name": None, "language": None,
+           "nutrients": {"carbohydrates_g": 27.0, "basis": "100g"}, "off_match": {"status": "not_found"}}  # fmt: skip
+    written = {}
+    monkeypatch.setattr(es, "get_doc", lambda doc_id: doc if doc_id == "abc" else None)
+    monkeypatch.setattr(es, "update_doc", lambda doc_id, fields: written.update(fields))
+    api.written = written
+    return api
+
+
+def test_patch_edits_name_and_language(stored):
+    r = stored.patch("/api/doc/abc", json={"product_name": "  Greek yogurt ", "language": "EN"})
+    assert r.status_code == 200
+    assert r.json()["product_name"] == "Greek yogurt" and r.json()["language"] == "en"
+    assert stored.written == {"product_name": "Greek yogurt", "language": "en"}
+
+
+def test_patch_empty_string_clears_a_field(stored):
+    stored.patch("/api/doc/abc", json={"product_name": "", "language": ""})
+    assert stored.written == {"product_name": None, "language": None}
+
+
+def test_patch_a_new_barcode_reruns_the_off_check(stored, monkeypatch):
+    seen = {}
+
+    def fake_check(code, carbs, basis):
+        seen.update(code=code, carbs=carbs, basis=basis)
+        return {"status": "match", "carbohydrates_100g": 27.0}
+
+    monkeypatch.setattr(off, "cross_check", fake_check)
+    r = stored.patch("/api/doc/abc", json={"barcode": "3 017620 425035"})
+    assert r.status_code == 200
+    assert seen == {"code": "3017620425035", "carbs": 27.0, "basis": "100g"}
+    assert stored.written["barcode"] == "3017620425035"
+    assert r.json()["off_match"]["status"] == "match"
+
+
+def test_patch_rejects_a_bad_barcode_a_bad_language_and_an_unknown_capture(stored):
+    assert stored.patch("/api/doc/abc", json={"barcode": "3017620425036"}).status_code == 400
+    assert stored.patch("/api/doc/abc", json={"language": "english!"}).status_code == 400
+    assert stored.patch("/api/doc/nope", json={"product_name": "x"}).status_code == 404
+    assert stored.written == {}
+
+
+def test_no_index_yet_is_an_empty_library_not_an_error(monkeypatch):
+    from elasticsearch import NotFoundError
+
+    def gone(*a, **k):
+        raise NotFoundError.__new__(NotFoundError)  # index_not_found_exception
+
+    monkeypatch.setattr(es, "_search", gone)
+    monkeypatch.setattr(es, "_aggregate", gone)
+    assert es.search("peanut") == {"total": 0, "hits": []}
+    assert es.aggregate()["total"] == 0 and es.aggregate()["allergens"] == []

@@ -29,8 +29,10 @@ flowchart LR
     A -->|"search + aggregations"| E
 ```
 
-The app has three screens: **Capture** (take or pick a photo), **Result** (the numbers next to the
-photo) and **Library** (search everything you have read, filter by allergen, see counts).
+It is built for a phone (and shows as a phone-width column on a laptop). Two tabs: **Capture** (take or
+pick a photo) and **Library** (search what you have read, filter by allergen, see counts). After a
+read, the **Result** opens as a sheet: the carbohydrate number next to the photo, the other numbers,
+and the unverified text. Name, language and barcode can be edited there.
 
 ## What you can trust
 
