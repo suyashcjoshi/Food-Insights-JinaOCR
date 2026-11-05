@@ -219,8 +219,8 @@ def test_kcal_off_by_more_than_20_percent_is_suspect_6902007505264():
     assert "parse_suspect" in res.flags
 
 
-def test_sugars_above_carbs_is_suspect_5053990156009():
-    res = fixture("5053990156009")
+def test_sugars_above_carbs_is_suspect():
+    res = parse("Carbohydrate 10 g\nof which sugars 20 g\nProtein 2 g")
     assert "sugars_gt_carbs" in res.suspect_reasons
     assert not res.verified
 

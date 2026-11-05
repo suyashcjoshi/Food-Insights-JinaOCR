@@ -55,7 +55,9 @@ def test_in_text_is_normalised(want, text, key, read):
 
 
 def test_model_read_accuracy_is_true_when_value_is_in_the_text_even_if_parse_is_wrong():
-    fields = scored("3017620425035")
+    fields = scored(
+        "x", "Carbohydrate 5 g\nProtein 57.5 g", {"carbohydrates_g": 57.5, "sugars_g": 56.3}
+    )
     assert fields["carbohydrates_g"]["outcome"] == "wrong"
     assert fields["carbohydrates_g"]["model_read_accuracy"] is True  # 57.5 is in the text
     assert fields["sugars_g"]["model_read_accuracy"] is False  # 56.3 is nowhere in it
@@ -64,13 +66,24 @@ def test_model_read_accuracy_is_true_when_value_is_in_the_text_even_if_parse_is_
 # --- categories, one per bug class --------------------------------------------------------------
 
 
-def test_shift_merged_two_line_labels_3017620425035():
-    """Nutella: `Glucides dont sucres 10.6` is really the saturates; every row below shifts."""
-    fields = scored("3017620425035")
-    assert fields["carbohydrates_g"]["got"] == 10.6  # the saturates value
+def test_shift_value_parsed_for_the_neighbouring_nutrient():
+    """Carbs row carries the protein number (the model merged rows and shifted the table)."""
+    fields = scored(
+        "x",
+        "Fat 10 g\nCarbohydrate 20 g\nProtein 6 g",
+        {"fat_g": 10, "carbohydrates_g": 6, "protein_g": 20},
+    )
+    assert fields["carbohydrates_g"]["got"] == 20
     assert fields["carbohydrates_g"]["category"] == "shift"
-    assert fields["protein_g"]["category"] == "shift"  # got the carbs value
-    assert fields["salt_g"]["category"] == "shift"  # got the protein value
+    assert fields["protein_g"]["category"] == "shift"
+
+
+def test_nutella_3017620425035_is_no_longer_a_shift_after_alignment():
+    fields = scored("3017620425035")
+    assert fields["carbohydrates_g"]["outcome"] == "correct"
+    assert fields["protein_g"]["outcome"] == "correct"
+    assert fields["salt_g"]["outcome"] == "correct"
+    assert fields["sugars_g"]["category"] == "model"  # the model dropped that row
 
 
 def test_unit_kj_taken_as_kcal():

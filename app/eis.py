@@ -27,6 +27,11 @@ BACKOFF_S = (5, 15, 30)
 MAX_TOKENS = 2048
 
 OFFICIAL_PROMPT = "Convert the document to markdown."
+PROMPTS = {
+    "official": OFFICIAL_PROMPT,
+    "table": "Convert the document to markdown. Render nutrition tables as HTML tables.",
+}
+DEFAULT_PROMPT = "table"  # key into PROMPTS; the app and score.py use it unless told otherwise
 
 _client: httpx.Client | None = None
 
@@ -221,6 +226,15 @@ def ocr_document_extraction(
         items = call.body.get("document_extraction") or [{}]
         call.text = items[0].get("content") or ""
     return call
+
+
+def cost_est(usage: dict) -> float | None:
+    """USD from reported tokens; None (omitted) when the price env vars are blank."""
+    pin, pout = _env("EIS_OCR_PRICE_PER_MTOK_IN"), _env("EIS_OCR_PRICE_PER_MTOK_OUT")
+    if not pin or not pout or not usage:
+        return None
+    tokens_in, tokens_out = usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
+    return (tokens_in * float(pin) + tokens_out * float(pout)) / 1e6
 
 
 def warmup() -> float:

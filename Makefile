@@ -1,4 +1,4 @@
-.PHONY: setup probe smoke fetch-sample score serve test lint
+.PHONY: setup probe smoke fetch-sample score compare seed serve test lint
 
 setup:
 	uv sync
@@ -14,6 +14,12 @@ fetch-sample:
 
 score:
 	uv run python scripts/score.py
+
+compare:
+	uv run python scripts/compare_prompts.py
+
+seed:
+	uv run python scripts/seed_off.py
 
 serve:
 	uv run uvicorn app.main:app --reload

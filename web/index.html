@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Food Insights</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <h1>Food Insights</h1>
+      <p>Read the label. <strong>Never advises.</strong></p>
+    </div>
+    <nav id="tabs" aria-label="Views">
+      <button data-view="capture" class="active">Capture</button>
+      <button data-view="result" disabled>Result</button>
+      <button data-view="library">Library</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- 1. CAPTURE -->
+    <section id="view-capture" class="view">
+      <div class="grid two">
+        <form id="capture-form" class="card" autocomplete="off">
+          <h2>Photograph a label</h2>
+          <label class="drop" id="drop">
+            <input type="file" id="file" name="image" accept="image/*" capture="environment">
+            <img id="preview" alt="" hidden>
+            <span id="drop-hint">Tap to take a photo or choose one.<br><small>JPEG or PNG, any size. It is rotated upright and shrunk to 1600&nbsp;px before it is read.</small></span>
+          </label>
+
+          <div class="row">
+            <label>Barcode <small>(optional, cross-checks Open Food Facts)</small>
+              <input type="text" id="barcode" inputmode="numeric" placeholder="3017620425035">
+            </label>
+            <label>Language of the pack <small>(you set it, the model never guesses)</small>
+              <select id="language">
+                <option value="">Not set</option>
+                <option value="en">English</option><option value="fr">Français</option>
+                <option value="es">Español</option><option value="pt">Português</option>
+                <option value="de">Deutsch</option><option value="it">Italiano</option>
+                <option value="ja">日本語</option>
+              </select>
+            </label>
+          </div>
+          <label>Product name <small>(optional)</small>
+            <input type="text" id="product-name" placeholder="Greek yogurt, vanilla">
+          </label>
+          <details class="adv">
+            <summary>Prompt</summary>
+            <select id="prompt"></select>
+            <small id="prompt-text"></small>
+          </details>
+
+          <button type="submit" id="read-btn" class="primary" disabled>Read label</button>
+          <p id="status" class="status" role="status"></p>
+        </form>
+
+        <aside class="card guide">
+          <h2>Framing guide</h2>
+          <p>The model reads what is in the frame and <em>invents</em> what is cut off. Framing is your job; nothing here fixes a bad photo.</p>
+          <ul>
+            <li><b>Fill the frame</b> with the Nutrition Facts panel. Keep the whole table in view, edges included.</li>
+            <li><b>Flat and sharp.</b> Press creased wrappers flat, avoid glare and shadow across the numbers.</li>
+            <li><b>Upright.</b> A sideways photo makes the model loop. We rotate by EXIF, but check it.</li>
+            <li><b>One product</b> per photo.</li>
+          </ul>
+          <p class="fine">The first read after a quiet period can take two to three minutes while the model wakes up.</p>
+        </aside>
+      </div>
+    </section>
+
+    <!-- 2. RESULT -->
+    <section id="view-result" class="view" hidden>
+      <div class="grid result">
+        <figure class="card shot">
+          <img id="shot" alt="The photographed label">
+          <figcaption>Source photo. Check every number against it.</figcaption>
+        </figure>
+
+        <div class="stack">
+          <article class="card" id="panel-card">
+            <header class="card-head">
+              <h2>Nutrition panel</h2>
+              <span id="verified-badge" class="badge"></span>
+            </header>
+            <p id="basis-line" class="basis"></p>
+            <div id="carb-hero" class="hero"></div>
+            <table class="nutrients" id="nutrients"><tbody></tbody></table>
+            <ul id="flags" class="flags"></ul>
+            <div id="off-chip" class="chip-line"></div>
+          </article>
+
+          <article class="card unverified" id="unverified-card">
+            <header class="card-head">
+              <h2>Unverified text <span class="dot">·</span> check the pack</h2>
+            </header>
+            <p class="fine">Ingredients and allergens as the model read them. Text cut off at the frame edge can be invented, so none of this is parsed into fields.</p>
+            <pre id="unverified-text"></pre>
+            <div class="allergens">
+              <h3>Allergen mentions <span class="tag">as read</span></h3>
+              <div id="allergen-chips" class="kinds"></div>
+              <p class="fine"><b>Contains</b>: named outside a “may contain” phrase. <b>May contain</b>: named only in one. Keywords found in the text above (14 EU-regulated allergens, en/fr/es/pt/de/it). Not a safety check.</p>
+            </div>
+          </article>
+
+          <p id="telemetry" class="telemetry"></p>
+          <p id="stored" class="fine"></p>
+
+          <details class="card raw" id="raw">
+            <summary>Raw view</summary>
+            <div class="raw-tabs">
+              <button data-raw="output" class="active">Model output</button>
+              <button data-raw="prompt">Prompt</button>
+              <button data-raw="request">Exact request</button>
+            </div>
+            <pre id="raw-body"></pre>
+            <div class="row" id="reread-row">
+              <button type="button" id="reread" class="ghost"></button>
+              <small>Re-reads the same photo with the other prompt. It is not stored.</small>
+            </div>
+          </details>
+
+          <div class="row">
+            <button type="button" id="again" class="ghost">Read another label</button>
+            <button type="button" id="to-library" class="ghost">Open library</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. LIBRARY -->
+    <section id="view-library" class="view" hidden>
+      <form id="search-form" class="card searchbar" autocomplete="off">
+        <input type="search" id="q" placeholder="Search products and label text, e.g. almond, Haselnuss, cacahuete">
+        <select id="f-language" aria-label="Language"><option value="">Any language</option></select>
+        <select id="f-kind" aria-label="Allergen kind">
+          <option value="">Contains or may contain</option>
+          <option value="contains">Contains only</option>
+          <option value="may_contain">May contain only</option>
+        </select>
+        <label class="check"><input type="checkbox" id="f-verified"> Verified panels only</label>
+        <button type="submit" class="primary">Search</button>
+      </form>
+
+      <div class="grid library">
+        <aside class="card facets">
+          <h2>Allergen mentions <span class="tag">as read</span></h2>
+          <p class="fine">Captures whose unverified text names the allergen, split into <span class="n contains">contains</span> and <span class="n may">may contain</span>. Click a name to filter.</p>
+          <div id="facet-allergens" class="facet-list"></div>
+          <h2>Languages</h2>
+          <div id="facet-languages" class="facet-list"></div>
+        </aside>
+        <div>
+          <p id="lib-summary" class="fine"></p>
+          <div id="cards" class="cards"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Reads the label, never advises: it does not compute a dose or suggest what to eat.
+    Nutrition data cross-checked against <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a> (ODbL).
+    OCR by <code>jina-ocr-v1</code> on the Elastic Inference Service.</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

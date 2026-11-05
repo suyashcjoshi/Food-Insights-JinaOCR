@@ -15,6 +15,16 @@ Labels are matched case- and accent-insensitively (`fold`). Decimal commas are d
 one under the `100 g` / `100 ml` header wins (`ParseResult.column`, `.basis`). `parse_suspect`
 flags a panel whose numbers contradict each other (kcal vs 4C+4P+9F, sugars > carbs, saturates >
 fat); `verified` requires it to be clear.
+
+Column choice: the `100 g` / `100 ml` header fixes the value column. A merged row of k labels with W
+value columns arrives as k*W stacked values (`7,0 g<br>1,3 g | 2,8 g<br>0,5 g`), read column-major.
+A header whose cell order contradicts the data's scale (250 ml values 2.5x the 100 ml ones) is
+swapped (`column_swapped`).
+
+Merged label rows (`Fat of which saturates | 30.9`) make the model drop a value and shift every row
+below it. `_align` fixes this for EU-ordered panels: it lines the labels up with the values in
+order, tries every way of leaving out the surplus labels (or trailing unlabelled values), and keeps
+the assignment that satisfies sat <= fat, sugars <= carbs and the Atwater check.
 """
 
 from __future__ import annotations
@@ -22,6 +32,8 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from itertools import combinations
+from statistics import median, multimode
 
 # target unit of each key: kcal, g, mg or mcg
 UNITS = {
@@ -68,7 +80,7 @@ LABELS: dict[str, str] = {
     "salt_g": r"salt|sel|salz|sal|sale|食塩相当量",
     "carbohydrates_g": (
         r"total carbohydrates?|carbohydrates?|carbs|hidratos? (?:de )?carbono|hidratos|carbohidratos|"
-        r"kohlenhydrate|glucides|gl[uú]cidos|carboidrati|炭水化物"
+        r"kohlenhydrate|gl[ua]cides|gl[uú]cidos|carboidrati|炭水化物"
     ),
     "fiber_g": (
         r"dietary fib(?:er|re)s?|fib(?:er|re)s?|ballaststoffe|fibras?|"
@@ -94,9 +106,10 @@ LABEL_RE = re.compile(
     re.IGNORECASE,
 )
 UNIT = r"mcg|µg|μg|ug|mg|kcal|kj|g"
+G = r"(?:mcg|µg|μg|ug|mg|g)"  # gram-type units; `g3,5` (glued to the number) must not follow a letter
 TOKEN_RE = re.compile(
-    rf"(?:(?P<u1>[-–]?\s*(?:{UNIT}))(?:\s+|(?:(?<=kcal)|(?<=kj))))?(?P<num>\d+(?:[.,]\d+)?)"
-    rf"(?:\s*(?P<u2>{UNIT})(?![a-z])|(?!\d)(?!\s*%))",
+    rf"(?:(?P<u1>[-–]?\s*(?:(?<![A-Za-z]){G}(?=\d)|{G}(?=\s)|kcal|kj))\s*)?(?P<num>\d+(?:[.,]\d+)?)"
+    rf"(?:\s*(?P<u2>{UNIT})(?:(?![a-z])|(?=(?:de|di|dos|dont|davon|of)\b))|(?!\d)(?!\s*%))",
     re.IGNORECASE,
 )
 # `Fat (g) 31.8 4.8`: the unit sits in the label and the values are bare
@@ -146,10 +159,14 @@ class ParseResult:
     per: str = "serving"
     basis: str = "unknown"  # 100g | 100ml | serving | unknown
     column: int | None = None  # index of the 100 g / 100 ml value column, None if no such header
+    width: int | None = None  # value columns named in the header
+    col_sizes: list[float | None] = field(default_factory=list)  # size of each, None: no size
+    column_swapped: bool = False  # header order contradicted the data's scale
     unverified_text: str = ""
     edge_cutoff_suspected: bool = False
     energy_from_kj: bool = False  # kcal was derived from kJ; an explicit kcal row replaces it
     suspect_reasons: list[str] = field(default_factory=list)
+    aligned: bool = False  # values were re-assigned by order-aware alignment
 
     @property
     def panel_found(self) -> bool:
@@ -167,6 +184,8 @@ class ParseResult:
     def flags(self) -> list[str]:
         out = ["edge_cutoff_suspected"] if self.edge_cutoff_suspected else []
         out += ["energy_converted"] if self.energy_converted else []
+        out += ["aligned"] if self.aligned else []
+        out += ["column_swapped"] if self.column_swapped else []
         return out + (["parse_suspect", *self.suspect_reasons] if self.parse_suspect else [])
 
     @property
@@ -297,6 +316,19 @@ def _run_end(matches: list[re.Match], ln: str, i: int) -> int:
     return i
 
 
+def _token_unit(toks: list[re.Match], idx: int, label_tail: str) -> str:
+    """Unit of toks[idx]: its own, else the first printed earlier in the row (`g 30.9 4.6`), else
+    the one in the label (`Fat (g) 31.8`)."""
+
+    def own(t: re.Match) -> str:
+        return (t.group("u2") or t.group("u1") or "").lower().lstrip("-– ")
+
+    unit = own(toks[idx]) or next((u for t in toks[:idx] if (u := own(t))), "")
+    if not unit and (lu := LABEL_UNIT_RE.match(label_tail)):
+        unit = lu.group("unit").lower()
+    return unit
+
+
 def _scan_line(ln: str, res: ParseResult) -> None:
     matches = list(LABEL_RE.finditer(ln))
     claimed: set[int] = set()  # start offsets of tokens already given to a label
@@ -309,38 +341,39 @@ def _scan_line(ln: str, res: ParseResult) -> None:
             continue
         toks = list(TOKEN_RE.finditer(seg))
         offset = m.end()
-        r = _run_end(matches, ln, i)
-        if (
+        chain = [key]  # `Fat of which saturates | 30.9`: labels with no value between them
+        last = _run_end(matches, ln, i)
+        while (
             not toks
-            and r + 1 < len(matches)
-            and CONNECTORS.match(ln[matches[r].end() : matches[r + 1].start()])
+            and last + 1 < len(matches)
+            and matches[last + 1].lastgroup != "energy_kcal"
+            and CONNECTORS.match(ln[matches[last].end() : matches[last + 1].start()])
         ):
-            # `Fat of which saturates | 30.9`: two labels, one value. It belongs to the first label.
-            nxt = matches[r + 1]
-            if nxt.lastgroup != "energy_kcal":
-                nr = _run_end(matches, ln, r + 1)
-                nend = matches[nr + 1].start() if nr + 1 < len(matches) else len(ln)
-                offset = matches[nr].end()
-                seg = ln[offset:nend]
-                toks = list(TOKEN_RE.finditer(seg))
+            last = _run_end(matches, ln, last + 1)
+            if matches[last].lastgroup not in chain:
+                chain.append(matches[last].lastgroup)
+            nend = matches[last + 1].start() if last + 1 < len(matches) else len(ln)
+            offset = matches[last].end()
+            toks = list(TOKEN_RE.finditer(ln[offset:nend]))
         col = res.column or 0
-        if len(toks) <= col or key in res.nutrients:
-            continue  # the row has no value in the per-100 column: never fall back to another one
-        tok_m = toks[col]
-        pos = offset + tok_m.start()
-        if pos in claimed:
-            continue
-        unit = (tok_m.group("u2") or tok_m.group("u1") or "").lower().lstrip("-– ")
-        if not unit and col:  # later columns repeat the unit printed once (`g 30.9 4.6`)
-            unit = next(
-                ((t.group("u2") or t.group("u1") or "").lower().lstrip("-– ") for t in toks[:col]),
-                "",
-            )
-        if not unit and (lu := LABEL_UNIT_RE.match(ln[m.end() :])):
-            unit = lu.group("unit").lower()  # unit given in the label, e.g. `Fat (g) 31.8`
-        if unit in TO_GRAMS:  # gram/mg values always print a unit; skip a bare number
-            res.nutrients[key] = _convert(_to_float(tok_m.group("num")), unit, key)
-            claimed.add(pos)
+        k = len(chain)
+        if k > 1 and res.width and len(toks) == k * res.width:
+            picks = {
+                name: col * k + j for j, name in enumerate(chain)
+            }  # stacked cells: column-major
+        elif len(toks) > col:
+            picks = {
+                key: col
+            }  # a merged row with one value per column: it belongs to the first label
+        else:
+            continue  # no value in the per-100 column: never fall back to another one
+        for name, idx in picks.items():
+            if name in res.nutrients or (pos := offset + toks[idx].start()) in claimed:
+                continue
+            unit = _token_unit(toks, idx, ln[m.end() :])
+            if unit in TO_GRAMS:  # gram/mg values always print a unit; skip a bare number
+                res.nutrients[name] = _convert(_to_float(toks[idx].group("num")), unit, name)
+                claimed.add(pos)
 
 
 def _ends_with_label(ln: str) -> bool:
@@ -353,18 +386,226 @@ def _ends_with_label(ln: str) -> bool:
     return last is not None and len(ln) - last.end() <= 3
 
 
-def _find_column(ln: str, res: ParseResult) -> None:
-    """The first `100 g` / `100 ml` header fixes which value column to read in every row."""
+def _find_column(ln: str, res: ParseResult, forced: int | None = None) -> None:
+    """The first `100 g` / `100 ml` header fixes which value column to read in every row.
+
+    Also records how many value columns the header names (`width`) and the size of each, which the
+    stacked-cell rule and the scale check need. Only the header part of the line counts: a glued
+    blob continues into the rows, so the header ends at the first nutrient label after a marker.
+    """
     hm = COL100_RE.search(ln)
     if hm is None or res.column is not None:
         return
-    left = ln[: hm.start()]
-    res.column = sum(
-        1
-        for m in COLUMN_HEADER_RE.finditer(left)
-        if "%" not in left[max(0, m.start() - 6) : m.start()]
-    )
+    head = ln
+    for lm in LABEL_RE.finditer(ln):
+        if lm.start() > hm.start():
+            head = ln[: lm.start()]
+            break
+    sizes: list[float | None] = []
+    idx100 = None
+    for m in COLUMN_HEADER_RE.finditer(head):
+        if "%" in head[max(0, m.start() - 12) : m.start()]:
+            continue  # a %RI column, not a value column
+        num = re.search(r"\d+(?:[.,]\d+)?", m.group())
+        sizes.append(_to_float(num.group()) if num else None)
+        if idx100 is None and COL100_RE.search(m.group()):
+            idx100 = len(sizes) - 1
+    if idx100 is None:  # the header was cut before its own 100 marker: count the columns left of it
+        idx100 = sum(
+            1
+            for m in COLUMN_HEADER_RE.finditer(ln[: hm.start()])
+            if "%" not in ln[max(0, m.start() - 12) : m.start()]
+        )
+        sizes = [*sizes, *[None] * (idx100 + 1 - len(sizes))][: max(len(sizes), idx100 + 1)]
+        sizes[idx100] = 100.0
+    res.column = forced if forced is not None else idx100
+    res.col_sizes = sizes
+    res.width = len(sizes)
     res.basis = "100ml" if "ml" in hm.group().lower() else "100g"
+
+
+def _scale_swap(rows: list[_Row], res: ParseResult) -> int | None:
+    """Column to read instead of the header's 100 g one, if the numbers prove the header is misordered.
+
+    Headers `250 ml | 100 ml` over values `10.6 | 27` (27 / 10.6 = 2.5): the smaller numbers are the
+    100 ml ones. Needs one clean row with both values; a consistent header returns None.
+    """
+    sizes, c = res.col_sizes, res.column
+    if c is None or c >= len(sizes) or len(sizes) < 2 or sizes[c] != 100:
+        return None
+    for j, size in enumerate(sizes):
+        if j == c or not size or size == 100:
+            continue
+        ratios = [
+            r.toks[j] / r.toks[c]
+            for r in rows
+            if len(r.keys) == 1 and len(r.toks) == len(sizes) and r.toks[c] and r.toks[j]
+        ]
+        if not ratios:
+            continue
+        med, expected = median(ratios), size / 100
+        if abs(med / expected - 1) <= 0.2:
+            return None  # header and data agree
+        if abs(med * expected - 1) <= 0.2:
+            return j
+    return None
+
+
+# --- order-aware alignment ------------------------------------------------------------------------
+
+EU_ORDER = (
+    "fat_g",
+    "saturated_fat_g",
+    "carbohydrates_g",
+    "sugars_g",
+    "fiber_g",
+    "protein_g",
+    "salt_g",
+)
+# the "of which" rows are what merged labels usually lose, so leaving them out is free
+SKIP_COST = {"saturated_fat_g": 0, "sugars_g": 0, "fiber_g": 0}
+VALUE_ONLY_NOISE = re.compile(r"\b(?:mcg|µg|mg|kcal|kj|g|lt|gt)\b|&lt;|&gt;", re.IGNORECASE)
+
+
+@dataclass
+class _Row:
+    keys: list[str]  # nutrient labels on this row, in text order (empty: a row with no label)
+    toks: list[float | None]  # every value token after the labels, in grams (None: no unit)
+    last_in_line: bool = True  # may carry extra unlabelled rows when tokens come glued together
+
+
+def _gram_tokens(seg: str) -> list[float | None]:
+    lu = LABEL_UNIT_RE.match(seg)
+    unit = lu.group("unit").lower() if lu else None
+    out: list[float | None] = []
+    for t in TOKEN_RE.finditer(seg):
+        u = (t.group("u2") or t.group("u1") or "").lower().lstrip("-– ")
+        if u in TO_GRAMS:
+            unit = u
+        use = u or unit
+        out.append(_to_float(t.group("num")) * TO_GRAMS[use] if use in TO_GRAMS else None)
+    return out
+
+
+def _collect_rows(ln: str, rows: list[_Row]) -> None:
+    """Add the label rows of one (folded) line: labels with no value between them share a row."""
+    matches = list(LABEL_RE.finditer(ln))
+    if not matches:
+        label_free = not re.search(r"[^\W\d_]", VALUE_ONLY_NOISE.sub("", ln))
+        if rows and label_free and (toks := _gram_tokens(ln)):
+            rows.append(_Row([], toks))  # `g 0.107 0.016 0%`: a row whose label cell is empty
+        return
+    made: list[_Row] = []
+    i = 0
+    while i < len(matches):
+        j = i
+        while j + 1 < len(matches) and not TOKEN_RE.search(
+            ln[matches[j].end() : matches[j + 1].start()]
+        ):
+            j += 1
+        keys: list[str] = []
+        for k in range(i, j + 1):
+            key = matches[k].lastgroup
+            if key != "energy_kcal" and key not in keys:
+                keys.append(key)
+        end = matches[j + 1].start() if j + 1 < len(matches) else len(ln)
+        if keys:
+            made.append(_Row(keys, _gram_tokens(ln[matches[j].end() : end]), last_in_line=False))
+        i = j + 1
+    if made:
+        made[-1].last_in_line = True
+        rows.extend(made)
+
+
+def _flatten(
+    rows: list[_Row], column: int, hdr_width: int | None = None
+) -> tuple[list[str], list[float]] | None:
+    """Ordered keys and ordered values of the table, or None if it is not an EU-ordered panel."""
+    counts = [len(r.toks) for r in rows if r.keys and r.toks]
+    if not counts:
+        return None
+    width = min(multimode(counts))  # value columns per row
+    keys: list[str] = []
+    values: list[float] = []
+    for r in rows:
+        if r.keys and all(k in keys for k in r.keys):
+            continue  # the same nutrient named again (a footnote)
+        k = len(r.keys)
+        if k > 1 and hdr_width and len(r.toks) == k * hdr_width:  # stacked cells, column-major
+            stack = r.toks[column * k : (column + 1) * k]
+            keys += [x for x in r.keys if x not in keys]
+            values += [v for v in stack if v is not None]
+            continue
+        chunks = [r.toks[i : i + width] for i in range(0, len(r.toks), width)]
+        if chunks and len(chunks[0]) > column and chunks[0][column] is not None:
+            values.append(chunks[0][column])
+        keys += [k for k in r.keys if k not in keys]
+        if r.keys and r.last_in_line and len(r.toks) % width == 0:
+            values += [c[column] for c in chunks[1:] if len(c) > column and c[column] is not None]
+    if len(keys) < 3 or any(k not in EU_ORDER for k in keys):
+        return None
+    if [EU_ORDER.index(k) for k in keys] != sorted({EU_ORDER.index(k) for k in keys}):
+        return None
+    return keys, values
+
+
+def _violations(a: dict[str, float], res: ParseResult) -> tuple[int, float]:
+    """Number of broken rules and the Atwater error (0.3 when it cannot be evaluated)."""
+    bad = 0
+    sat, fat, sug, carb = (
+        a.get(k) for k in ("saturated_fat_g", "fat_g", "sugars_g", "carbohydrates_g")
+    )
+    bad += sat is not None and fat is not None and sat > fat + 0.05
+    bad += sug is not None and carb is not None and sug > carb + 0.05
+    fib = a.get("fiber_g")
+    bad += fib is not None and carb is not None and fib > carb + 0.05
+    if res.basis.startswith("100"):
+        bad += any(v > 100.5 for v in a.values())
+        macros = [a.get(k) for k in ("fat_g", "carbohydrates_g", "protein_g")]
+        bad += sum(m for m in macros if m is not None) > 105
+    kcal, protein = res.nutrients.get("energy_kcal"), a.get("protein_g")
+    if None in (kcal, fat, carb, protein):
+        return bad, 0.3
+    est = 4 * carb + 4 * protein + 9 * fat
+    diff = abs(kcal - est)
+    bad += diff > KCAL_NOISE and diff > KCAL_TOLERANCE * est
+    return bad, diff / max(est, 1.0)
+
+
+def _align(rows: list[_Row], res: ParseResult) -> None:
+    flat = _flatten(rows, res.column or 0, res.width)
+    if flat is None:
+        return
+    keys, values = flat
+    n, m = len(keys), len(values)
+    if m < 2 or abs(n - m) > 3:
+        return
+    best: tuple | None = None
+    if n >= m:  # a value was lost: leave some labels without one
+        options = [
+            (skip, dict(zip([k for i, k in enumerate(keys) if i not in skip], values, strict=True)))
+            for skip in combinations(range(n), n - m)
+        ]
+        costs = [sum(SKIP_COST.get(keys[i], 1) for i in skip) for skip, _ in options]
+    else:  # a spare value: an unlabelled row (cheap if trailing, as in a glued last row)
+        options = [
+            (skip, dict(zip(keys, [v for i, v in enumerate(values) if i not in skip], strict=True)))
+            for skip in combinations(range(m), m - n)
+        ]
+        costs = [sum(0 if i >= n else 1 for i in skip) for skip, _ in options]
+    for (skip, assign), cost in zip(options, costs, strict=True):
+        bad, err = _violations(assign, res)
+        # later labels are the casualties of merged rows, so prefer leaving those out
+        rank = (bad, cost, round(err, 2), tuple(-i for i in sorted(skip, reverse=True)))
+        if best is None or rank < best[0]:
+            best = (rank, assign)
+    if best is None or best[0][0] != 0:
+        return
+    assign = {k: round(v, 4) for k, v in best[1].items()}
+    new = {**{k: v for k, v in res.nutrients.items() if k not in keys}, **assign}
+    if {k: res.nutrients.get(k) for k in keys if k in res.nutrients} != assign:
+        res.aligned = True
+    res.nutrients = new
 
 
 def _check_consistency(res: ParseResult) -> None:
@@ -383,7 +624,7 @@ def _check_consistency(res: ParseResult) -> None:
         res.suspect_reasons.append("saturates_gt_fat")
 
 
-def parse(md: str) -> ParseResult:
+def parse(md: str, *, _force_column: int | None = None) -> ParseResult:
     lines = normalize(md)
     res = ParseResult(edge_cutoff_suspected=_cutoff(lines, md or ""))
 
@@ -395,34 +636,60 @@ def parse(md: str) -> ParseResult:
             break
 
     pending = ""
+    rows: list[_Row] = []
+    todo: list[
+        tuple[str, str]
+    ] = []  # (kind, line) in text order, run once the column count is known
+    collecting = True  # label rows are only read until the ingredients paragraph starts
     for ln in lines:
         if UNVERIFIED_START.match(ln):  # the ingredients paragraph is never parsed
             pending = ""
+            collecting = False
             continue
         if res.serving_text is None and (m := SERVING_RE.search(ln)):
             res.serving_text = m.group(1).strip()
         ln = fold(ln)
-        _find_column(ln, res)
+        _find_column(ln, res, _force_column)
         if pending:
             ln, pending = f"{pending} {ln}", ""
         if _ends_with_label(ln):
             pending = ln  # label wrapped onto the next row: join them
             continue
         if re.match(r"^kcal\s*\d", ln, re.IGNORECASE):
-            _energy(ln, res)  # German tables: `Energie kJ 1360` / `kcal 329` on separate rows
+            todo.append(("kcal", ln))  # German tables: `Energie kJ 1360` / `kcal 329` on two rows
             continue
         if "added sugar" in ln.lower():
+            todo.append(("added", ln))
+            continue
+        todo.append(("scan", ln))
+        if collecting:
+            _collect_rows(ln, rows)
+
+    # How many value columns? The rows know better than the header: a header that names `100 g`
+    # alone over rows that all carry two values is a two-column table.
+    counts = [len(r.toks) for r in rows if len(r.keys) == 1 and r.toks]
+    if counts:
+        res.width = min(multimode(counts))
+    for kind, ln in todo:
+        if kind == "kcal":
+            _energy(ln, res)
+        elif kind == "added":
             for rx in ADDED_SUGARS_RES:
                 if (m := rx.search(ln)) and "added_sugars_g" not in res.nutrients:
                     res.nutrients["added_sugars_g"] = _convert(
                         _to_float(m.group("num")), m.group("unit") or "g", "added_sugars_g"
                     )
                     break
-            continue
-        _scan_line(ln, res)
+        else:
+            _scan_line(ln, res)
 
     if not res.unverified_text and not res.panel_found:
         res.unverified_text = (md or "").strip()  # no panel in frame: all of it is unverified
+
+    if _force_column is None and (swap := _scale_swap(rows, res)) is not None:
+        swapped = parse(md, _force_column=swap)  # the data say the 100 g column is another one
+        swapped.column_swapped = True
+        return swapped
 
     if res.column is None:
         first_100, first_serv = PER_100.search(md or ""), PER_SERVING.search(md or "")
@@ -431,5 +698,6 @@ def parse(md: str) -> ParseResult:
         elif first_serv:
             res.basis = "serving"
     res.per = "100g" if res.basis.startswith("100") else "serving"
+    _align(rows, res)
     _check_consistency(res)
     return res

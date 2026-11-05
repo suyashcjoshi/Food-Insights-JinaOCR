@@ -3,6 +3,7 @@
     uv run python scripts/score.py              # OCR every image (cached), then score
     uv run python scripts/score.py --rescore    # score from cached OCR only, no API calls
     uv run python scripts/score.py --limit 10
+    uv run python scripts/score.py --prompt table   # PROMPTS key in app/eis.py; own cache + report
 
 Only `panel.nutrients` (per 100 g) is compared; nothing under `secondary` is ever scored.
 Tolerance: +-0.5 g (or mg/mcg) and +-5 kcal. A field is correct, wrong (parsed, outside tolerance)
@@ -12,14 +13,13 @@ Every wrong or missing field is classified by likely cause (see `classify`), and
 `--freeze-baseline OLD_SCORE.json` re-annotates the rows of a score.json made by an older parser
 and stores them in reports/baseline/score_before.json; every later run prints a before/after table
 against it (same classifier on both sides, so the categories are comparable).
-Writes reports/score.md and reports/score.json; raw OCR is cached in data/off/ocr_cache/.
+Writes reports/score_<prompt>.md/.json (and score.md/.json for the default prompt); raw OCR is cached in data/off/ocr_cache[_<prompt>]/.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 from collections import defaultdict
@@ -29,18 +29,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from triage_model_misses import load_confirmed, read_after_triage
+
 from app import eis
 from app.images import prepare, to_data_url
 from app.ocr import is_looped, strip_regions
 from app.parse import LABEL_RE, fold, normalize, parse
 
 OFF = ROOT / "data" / "off"
-CACHE = OFF / "ocr_cache"
 REPORTS = ROOT / "reports"
 TOL = {"energy_kcal": 5.0}
 DEFAULT_TOL = 0.5
 WORKERS = 4
 BASELINE = REPORTS / "baseline" / "score_before.json"
+MIN_CHART_N = 5  # a language with fewer images is shown with its n but kept out of the chart data
 KJ_PER_KCAL = 4.184
 CATEGORIES = ("shift", "comma", "unit", "synonym", "column", "truth_disagreement", "model")
 CATEGORY_HELP = {
@@ -54,23 +56,24 @@ CATEGORY_HELP = {
 }
 
 
-def cost_est(usage: dict) -> float | None:
-    """USD from reported tokens; None (omitted) when the price env vars are blank."""
-    pin, pout = os.getenv("EIS_OCR_PRICE_PER_MTOK_IN"), os.getenv("EIS_OCR_PRICE_PER_MTOK_OUT")
-    if not pin or not pout or not usage:
-        return None
-    tokens_in, tokens_out = usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
-    return (tokens_in * float(pin) + tokens_out * float(pout)) / 1e6
+def cache_dir(prompt: str) -> Path:
+    """The official prompt keeps the original cache; every other prompt gets its own."""
+    return OFF / ("ocr_cache" if prompt == "official" else f"ocr_cache_{prompt}")
 
 
-def ocr(entry: dict, use_api: bool) -> dict | None:
+def report_names(prompt: str) -> list[str]:
+    """score_<prompt> always; also plain `score` for the default prompt (what the README points at)."""
+    return [f"score_{prompt}", *(["score"] if prompt == eis.DEFAULT_PROMPT else [])]
+
+
+def ocr(entry: dict, use_api: bool, prompt: str) -> dict | None:
     """Cached OCR record for one manifest entry; calls the API only if allowed and not cached."""
-    cache = CACHE / f"{entry['barcode']}.json"
+    cache = cache_dir(prompt) / f"{entry['barcode']}.json"
     if cache.exists():
         return json.loads(cache.read_text())
     if not use_api:
         return None
-    call = eis.ocr_chat(to_data_url(prepare(OFF / entry["image"])))
+    call = eis.ocr_chat(to_data_url(prepare(OFF / entry["image"])), prompt=eis.PROMPTS[prompt])
     rec = {
         "status": call.status,
         "ms": call.ms,
@@ -233,7 +236,7 @@ def score_entry(entry: dict, rec: dict) -> dict:
         "ms": rec["ms"],
         "prompt_tokens": rec["usage"].get("prompt_tokens"),
         "completion_tokens": rec["usage"].get("completion_tokens"),
-        "cost_est": cost_est(rec["usage"]),
+        "cost_est": eis.cost_est(rec["usage"]),
         "finish_reason": rec["finish_reason"],
     }
     if rec["status"] != 200:
@@ -334,13 +337,14 @@ def main() -> int:
     ap.add_argument("--rescore", action="store_true", help="use cached OCR only, no API calls")
     ap.add_argument("--limit", type=int)
     ap.add_argument("--freeze-baseline", type=Path, help="score.json from the old parser")
+    ap.add_argument("--prompt", choices=sorted(eis.PROMPTS), default=eis.DEFAULT_PROMPT)
     args = ap.parse_args()
 
     entries = [json.loads(ln) for ln in (OFF / "manifest.jsonl").read_text().splitlines()]
     entries = entries[: args.limit] if args.limit else entries
-    CACHE.mkdir(parents=True, exist_ok=True)
+    cache_dir(args.prompt).mkdir(parents=True, exist_ok=True)
     with ThreadPoolExecutor(WORKERS) as pool:
-        recs = list(pool.map(lambda e: ocr(e, not args.rescore), entries))
+        recs = list(pool.map(lambda e: ocr(e, not args.rescore, args.prompt), entries))
 
     if args.freeze_baseline:
         texts = {
@@ -401,8 +405,37 @@ def main() -> int:
     summary["model_read_accuracy"] = after["model_read_accuracy"]
     summary["categories"] = after["categories"]
     summary["parse_suspect_images"] = sum(r["parse_suspect"] for r in ok_rows)
+    # confirmed_cause is a human's call on the official run's photos, so only that run uses it
+    confirmed = load_confirmed() if args.prompt == "official" else {}
+    summary["read_after_triage"] = read_after_triage(rows, cache_dir(args.prompt), confirmed)
+    summary["chart"] = [
+        {
+            "language": lang,
+            "images": t["images"],
+            "field_accuracy": t["field_accuracy"],
+            "carbs_accuracy": t["carbs_accuracy"],
+        }
+        for lang, t in summary["per_language"].items()
+        if t["images"] >= MIN_CHART_N
+    ] + [
+        {
+            "language": "all",
+            "images": overall["images"],
+            "field_accuracy": overall["field_accuracy"],
+            "carbs_accuracy": overall["carbs_accuracy"],
+        }
+    ]
+    summary["excluded_from_chart"] = {
+        lang: t["images"]
+        for lang, t in summary["per_language"].items()
+        if t["images"] < MIN_CHART_N
+    }
     before = None
-    if BASELINE.exists():
+    summary["prompt"] = args.prompt
+    summary["table_outputs"] = sum(
+        "<table" in (r["text"] or "").lower() for r in recs if r and r["status"] == 200
+    )
+    if BASELINE.exists() and args.prompt == "official":
         base_rows = json.loads(BASELINE.read_text())["rows"]
         keep = {r["barcode"] for r in rows}  # same images on both sides
         before = digest([r for r in base_rows if r["barcode"] in keep])
@@ -414,9 +447,10 @@ def main() -> int:
     summary["per_nutrient"] = by_key
 
     REPORTS.mkdir(exist_ok=True)
-    (REPORTS / "score.json").write_text(
-        json.dumps({"summary": summary, "rows": rows}, indent=2, ensure_ascii=False)
-    )
+    names = report_names(args.prompt)
+    payload = json.dumps({"summary": summary, "rows": rows}, indent=2, ensure_ascii=False)
+    for n in names:
+        (REPORTS / f"{n}.json").write_text(payload)
 
     def acc(t: dict) -> str:
         return "-" if t["field_accuracy"] is None else f"{t['field_accuracy']:.0%}"
@@ -430,6 +464,8 @@ def main() -> int:
         "|---|---|---|---|---|---|",
     ]
     for lang, t in {**summary["per_language"], "**all**": overall}.items():
+        if lang in summary["excluded_from_chart"]:
+            lang = f"{lang} (n={t['images']})"
         carbs = "-" if t["carbs_accuracy"] is None else f"{t['carbs_accuracy']:.0%}"
         md.append(
             f"| {lang} | {t['images']} | {carbs} | {acc(t)} ({t['correct']}/{t['fields']}) | {t['wrong']} | {t['missing']} |"
@@ -451,6 +487,7 @@ def main() -> int:
     if summary["cost_est_total"] is not None:
         md.append(f"- cost_est for the whole run: ${summary['cost_est_total']:.5f}")
     m = summary["misses"]
+    rt = summary["read_after_triage"]
     md += [
         (
             f"- Of {m['total']} wrong or missing fields, {m['value_in_ocr_text']} have the OFF value "
@@ -464,6 +501,14 @@ def main() -> int:
             f"{ratio(summary['model_read_accuracy'])}"
         ),
         f"- Panels flagged parse_suspect: {summary['parse_suspect_images']}",
+        (
+            f"- Read accuracy after triage: {ratio(rt['read_after'])} (before triage "
+            f"{ratio(rt['read_before'])}). {rt['reclassified_as_read']} of {rt['model_misses']} "
+            f"`model` misses have a cause where the model read the pack correctly "
+            f"(basis_mismatch, rounding_lt05, revision); {rt['confirmed']} causes confirmed by hand, "
+            f"{rt['suggested']} suggested by the heuristic"
+        ),
+        f"- Prompt `{args.prompt}`: {summary['table_outputs']} of {len(ok_rows)} outputs contain `<table>`",
     ]
     if before:
         a, b = after, before
@@ -502,6 +547,15 @@ def main() -> int:
                 f"| {lang} | {ratio(bl.get('field_accuracy'))} ({bl.get('correct')}/{bl.get('fields')}) | "
                 f"{ratio(al['field_accuracy'])} ({al['correct']}/{al['fields']}) |"
             )
+    if summary["excluded_from_chart"]:
+        ex = ", ".join(f"{k} (n={v})" for k, v in summary["excluded_from_chart"].items())
+        md += [
+            "",
+            (
+                f"Languages with fewer than {MIN_CHART_N} images are listed with their n but left out of "
+                f"`chart` in the JSON (chart data): {ex}. Their percentages move 50 points per image."
+            ),
+        ]
     cats = summary["categories"]
     md += [
         "",
@@ -542,11 +596,12 @@ def main() -> int:
         md += [
             f"| {r['barcode']} | {r['lang']} | {k} | {f['want']} | {f['got']} |" for r, k, f in bad
         ]
-    (REPORTS / "score.md").write_text("\n".join(md) + "\n")
+    for n in names:
+        (REPORTS / f"{n}.md").write_text("\n".join(md) + "\n")
 
     print(
         f"{len(ok_rows)} images, carbs {overall['carbs_accuracy']}, fields {overall['field_accuracy']} "
-        f"({overall['correct']}/{overall['fields']}), looped {summary['looped']}, errors {errors} -> reports/score.md"
+        f"({overall['correct']}/{overall['fields']}), looped {summary['looped']}, errors {errors} -> reports/{names[0]}.md"
     )
     return 0
 

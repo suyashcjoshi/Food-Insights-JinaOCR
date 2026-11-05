@@ -18,6 +18,11 @@ def prepare(path: str | Path, max_edge: int = MAX_EDGE) -> Image.Image:
     return img
 
 
+def prepare_bytes(data: bytes, max_edge: int = MAX_EDGE) -> Image.Image:
+    """Same as `prepare` for an uploaded file."""
+    return prepare(io.BytesIO(data), max_edge)
+
+
 def to_data_url(img: Image.Image, fmt: str = "JPEG") -> str:
     buf = io.BytesIO()
     img.save(buf, format=fmt, quality=90) if fmt == "JPEG" else img.save(buf, format=fmt)
