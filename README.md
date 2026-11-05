@@ -60,7 +60,6 @@ The first read after a quiet period can take a few minutes while the model wakes
 | `app/` | the backend: `eis.py` (model calls), `parse.py` (numbers), `allergens.py`, `off.py`, `es.py`, `pipeline.py`, `main.py` |
 | `web/` | the page: `index.html`, `app.js`, `style.css` (no build step) |
 | `scripts/` | tools: `score.py` (benchmark against Open Food Facts), `seed_off.py`, `fetch_off_sample.py`, `smoke_test.py` |
-| `docs/` | `architecture.svg` and the screenshots above |
 
 ## Credits
 
