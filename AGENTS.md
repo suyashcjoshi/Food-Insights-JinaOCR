@@ -1,12 +1,11 @@
-# AGENTS.md — Food Insights · jina-ocr-v1 on Elastic Inference Service
+# AGENTS.md — Food Insights · Jina OCR on Elastic Inference Service
 
 Instructions for any coding agent (Claude Code, Codex, Cursor, Gemini CLI, …) and for humans. Claude Code reads this through `CLAUDE.md`.
 
-Demo app + benchmark for an Elastic Community YouTube video. Photograph a food
-label, send it to `jina-ocr-v1` through the Elastic Inference Service (EIS),
-parse the nutrition panel into verified fields, cross-check against
-Open Food Facts by barcode, index everything in Elasticsearch Serverless, and
-search it.
+Demo app + benchmark for an Elastic Community YouTube video. Pipeline: Extract → Ingest → Search.
+Photograph a food label, send it to the EIS `document_extraction` task (`.jina-reader`, Jina OCR),
+parse the nutrition panel into fields, index everything in Elasticsearch Serverless, and search it.
+There is no barcode check and no "Verified" badge: both were removed on purpose.
 
 ## Stack (keep it this small)
 
@@ -15,7 +14,8 @@ search it.
   to Open Food Facts (the UI shows the exact HTTP request).
   Official `elasticsearch` client only for index / bulk / search / aggs.
 - Images: Pillow (EXIF transpose, resize). PyMuPDF only if PDFs come in later.
-- Frontend: one `web/index.html` + `app.js` + `style.css`, no build
+- Frontend: `web/index.html` + `style.css` + four plain ES modules in `web/js/` (`main.js`, `result.js`, `library.js`,
+  `util.js`; one-way imports, no cycles), no build
   step, served as static files by FastAPI. No React, no Streamlit.
 - Tooling: `ruff` (lint+format), `pytest` for the parser and scoring code,
   `python-dotenv` for `.env`. A `Makefile` with `setup`, `smoke`,
@@ -25,12 +25,12 @@ search it.
 
 ```
 app/            FastAPI app: eis.py, ocr.py, parse.py, allergens.py, off.py, es.py, pipeline.py, main.py
-web/            static frontend (phone-first): index.html, app.js, style.css
-scripts/        score.py, smoke_test.py, fetch_off_sample.py, seed_off.py, render_diagram.py, ui_screenshots.py
+web/            static frontend (phone-first): index.html, style.css, js/ (4 ES modules)
+scripts/        score.py, smoke_test.py, fetch_off_sample.py, seed_off.py, ui_screenshots.py
 tests/          pytest; fixtures/ holds real model output for the cases that broke the parser
 data/kitchen/   my own phone photos and their ground truth (committed; they are mine)
 data/off/       Open Food Facts sample (git-ignored; fetched by script; attribution kept)
-docs/           architecture.svg (source: architecture.mmd), screenshots/
+screenshots/    the images the README shows (capture, result, raw, library)
 _notes/         local notes, results and working scripts (git-ignored, never committed)
 ```
 
@@ -39,13 +39,14 @@ _notes/         local notes, results and working scripts (git-ignored, never com
 `.env` (git-ignored) with `ES_URL` and `ES_API_KEY`. Auth header is
 `Authorization: ApiKey <key>`. Never print the key, never commit it. The
 Serverless project is `FoodInsights` (Azure eastus); default EIS endpoints
-already exist, nothing to PUT for chat_completion.
+already exist (`.jina-reader` for document_extraction), nothing to PUT.
 
 ## Rules that bite
 
-- OCR endpoint is `chat_completion`; EIS rejects `repetition_penalty` and
-  `no_repeat_ngram_size`. Only `max_completion_tokens`, `temperature`,
-  `top_p`, `stop` are safe. Cap `max_completion_tokens` at 2048.
+- Main read: `POST _inference/document_extraction/.jina-reader` (preview, Serverless). Body is
+  `{"input":[{"content":{"type":"image","format":"base64","value":"data:…"}}]}`; the answer is
+  `document_extraction[0].content` Markdown. No prompt, no `usage` in the response. It stores nothing:
+  indexing is a separate call. `pdf` needs `task_settings.parameters.preset: "ocr"` when it has no text layer.
 - First call after idle can take 2–3 minutes (cold start). Use a 180 s client
   timeout in scripts; add a `warmup()` that sends a tiny image and ignores the
   result.
@@ -56,15 +57,17 @@ already exist, nothing to PUT for chat_completion.
   nutrient (`Total Carbohydrate 27g 10%`). The parser must handle both.
 - The model invents text for anything cut off at the frame edge. Never parse
   ingredients/allergens into fields; keep them as `unverified_text`.
-- Token usage arrives on the last SSE chunk (streaming) or in `usage`
-  (non-streaming). Record `prompt_tokens`, `completion_tokens`, wall time
-  on every call.
-- Open Food Facts: send `User-Agent: FoodInsights/0.1 (<contact email>)`,
-  ≤ 10 search requests/min, cache product JSON to disk, treat 503 and
-  `status: 0` as "no match", never as an error that stops the run.
+- The reader is preview (not GA in 9.6) and returns no token usage today; that may change. Record wall time (`ocr_ms`), the endpoint and the task on every call, and ignore response fields we do not know. If a `usage` field appears later, add it to telemetry then.
+- Open Food Facts is data for the benchmark and the sample Library only (`scripts/fetch_off_sample.py`,
+  `score.py`, `seed_off.py`); the app does not call it. When fetching: a descriptive `User-Agent` from
+  `OFF_USER_AGENT` in `.env`, ≤ 10 search requests/min, product JSON cached to disk.
 - Do not add OpenCV, deskew, or any CV pipeline. Framing is the user's job.
 - Do not build chat/RAG, reranking, or embeddings in this repo yet. Those are
   a follow-up video.
+- No barcode check and no verification badge (removed on purpose; do not re-add).
+- Only the `document_extraction` reader is used. The older `chat_completion` + `jina-ocr-v1` path was
+  removed on purpose (expected to be sunset); do not re-add it, a prompt picker or token/cost telemetry.
+- Say "open weights, non-commercial licence" about the model, never "open source".
 
 ## Conventions
 

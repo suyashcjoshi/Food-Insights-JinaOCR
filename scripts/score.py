@@ -3,7 +3,6 @@
     uv run python scripts/score.py              # OCR every image (cached), then score
     uv run python scripts/score.py --rescore    # score from cached OCR only, no API calls
     uv run python scripts/score.py --limit 10
-    uv run python scripts/score.py --prompt table   # PROMPTS key in app/eis.py; own cache + report
 
 Only `panel.nutrients` (per 100 g) is compared; nothing under `secondary` is ever scored.
 Tolerance: +-0.5 g (or mg/mcg) and +-5 kcal. A field is correct, wrong (parsed, outside tolerance)
@@ -13,7 +12,10 @@ Every wrong or missing field is classified by likely cause (see `classify`), and
 `--freeze-baseline OLD_SCORE.json` re-annotates the rows of a score.json made by an older parser
 and stores them in _notes/reports/baseline/score_before.json; every later run prints a before/after table
 against it (same classifier on both sides, so the categories are comparable).
-Writes _notes/reports/score_<prompt>.md/.json (and score.md/.json for the default prompt); raw OCR is cached in data/off/ocr_cache[_<prompt>]/.
+Writes _notes/reports/score.md/.json; raw reader output is cached in data/off/ocr_cache_reader/.
+
+Layout: OCR cache -> matching an OFF value inside the OCR text -> why a field is wrong (`classify`)
+-> scoring one image -> tallies -> the summary dict -> the Markdown report -> `main`.
 """
 
 from __future__ import annotations
@@ -29,20 +31,27 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-
 from app import eis
 from app.images import prepare, to_data_url
 from app.ocr import is_looped, strip_regions
 from app.parse import LABEL_RE, fold, normalize, parse
 
 OFF = ROOT / "data" / "off"
+CACHE = OFF / "ocr_cache_reader"
 REPORTS = ROOT / "_notes" / "reports"  # git-ignored: results are local notes, not part of the repo
+BASELINE = REPORTS / "baseline" / "score_before.json"
+
+WORKERS = 4
 TOL = {"energy_kcal": 5.0}
 DEFAULT_TOL = 0.5
-WORKERS = 4
-BASELINE = REPORTS / "baseline" / "score_before.json"
 MIN_CHART_N = 5  # a language with fewer images is shown with its n but kept out of the chart data
 KJ_PER_KCAL = 4.184
+ZERO_RE = re.compile(r"(?<![\d.,])0(?:[.,]0+)?(?![\d])")
+KJ_NUMBER_RE = re.compile(r"(?<![\d.,])\d{3,4}(?![\d.,])")  # a 3-4 digit number: maybe kJ
+SAME_NUTRIENT_TOL = {"energy_kcal": 1.0}  # tight equality: "this is another nutrient's number"
+DEFAULT_SAME_TOL = 0.06
+SMALL_RATIO_TOL = 0.15  # `similar_small_ratio`: every parsed field is this close to OFF
+
 CATEGORIES = ("shift", "comma", "unit", "synonym", "column", "truth_disagreement", "model")
 CATEGORY_HELP = {
     "shift": "value sits on another nutrient's row, or the parser gave this value to a neighbour",
@@ -55,35 +64,29 @@ CATEGORY_HELP = {
 }
 
 
-def cache_dir(prompt: str) -> Path:
-    """The official prompt keeps the original cache; every other prompt gets its own."""
-    return OFF / ("ocr_cache" if prompt == "official" else f"ocr_cache_{prompt}")
+# --- the OCR cache -----------------------------------------------------------------------------
 
 
-def report_names(prompt: str) -> list[str]:
-    """score_<prompt> always; also plain `score` for the default prompt (what the README points at)."""
-    return [f"score_{prompt}", *(["score"] if prompt == eis.DEFAULT_PROMPT else [])]
-
-
-def ocr(entry: dict, use_api: bool, prompt: str) -> dict | None:
+def ocr(entry: dict, use_api: bool) -> dict | None:
     """Cached OCR record for one manifest entry; calls the API only if allowed and not cached."""
-    cache = cache_dir(prompt) / f"{entry['barcode']}.json"
+    cache = CACHE / f"{entry['barcode']}.json"
     if cache.exists():
         return json.loads(cache.read_text())
     if not use_api:
         return None
-    call = eis.ocr_chat(to_data_url(prepare(OFF / entry["image"])), prompt=eis.PROMPTS[prompt])
+    call = eis.read(to_data_url(prepare(OFF / entry["image"])))
     rec = {
         "status": call.status,
         "ms": call.ms,
-        "usage": call.usage,
-        "finish_reason": call.finish_reason,
         "text": call.text,
         "error": None if call.ok else call.raw[:300],
     }
     if call.ok:  # never cache a failure, so a rerun retries it
         cache.write_text(json.dumps(rec, ensure_ascii=False))
     return rec
+
+
+# --- is the OFF value written anywhere in the OCR text? ----------------------------------------
 
 
 def _forms(want: float) -> set[str]:
@@ -94,6 +97,21 @@ def _pattern(forms: set[str]) -> re.Pattern:
     return re.compile("|".join(rf"(?<![\d.,]){re.escape(f)}(?![\d])" for f in sorted(forms)))
 
 
+def _written_forms(want: float, key: str) -> set[str]:
+    """Every way the value can be printed: dot or comma, trailing zeros, a whole kcal."""
+    forms = _forms(want)
+    forms |= {f.replace(".", ",") for f in forms}
+    if key == "energy_kcal":
+        forms |= {str(round(want))}
+    return forms
+
+
+def _kj_in_text(want_kcal: float, text: str) -> bool:
+    """The kJ equivalent of a kcal value (within 1 %) is printed somewhere."""
+    kj = want_kcal * KJ_PER_KCAL
+    return any(abs(int(n) - kj) <= 0.01 * kj for n in KJ_NUMBER_RE.findall(text))
+
+
 def in_text(want: float, text: str, key: str = "") -> bool:
     """Is the OFF value (normalised) written anywhere in the OCR text? Normalised: decimal comma or
     dot, trailing zeros, and for energy a whole kcal or the kJ equivalent (within 1 %). If not, a
@@ -101,16 +119,9 @@ def in_text(want: float, text: str, key: str = "") -> bool:
     wrong. Zero is "read" by definition (it is everywhere), so it never hides a parser miss."""
     if want == 0:
         return True
-    forms = _forms(want)
-    forms |= {f.replace(".", ",") for f in forms}
-    if key == "energy_kcal":
-        forms |= {str(round(want))}
-        kj = want * KJ_PER_KCAL
-        if any(
-            abs(int(n) - kj) <= 0.01 * kj for n in re.findall(r"(?<![\d.,])\d{3,4}(?![\d.,])", text)
-        ):
-            return True
-    return bool(_pattern(forms).search(text))
+    if key == "energy_kcal" and _kj_in_text(want, text):
+        return True
+    return bool(_pattern(_written_forms(want, key)).search(text))
 
 
 def _comma_only(want: float, text: str) -> bool:
@@ -122,13 +133,12 @@ def _comma_only(want: float, text: str) -> bool:
     return bool(_pattern(commas).search(text)) and not _pattern(dots).search(text)
 
 
-def _tol(key: str) -> float:
-    return TOL.get(key, DEFAULT_TOL)
+# --- why is a field wrong or missing? ----------------------------------------------------------
 
 
 def _same(a: float, b: float, key: str) -> bool:
     """Tight equality used to recognise 'this is another nutrient's number'."""
-    return abs(a - b) <= (1.0 if key == "energy_kcal" else 0.06)
+    return abs(a - b) <= SAME_NUTRIENT_TOL.get(key, DEFAULT_SAME_TOL)
 
 
 def similar_small_ratio(fields: dict) -> bool:
@@ -136,11 +146,74 @@ def similar_small_ratio(fields: dict) -> bool:
     tolerance: the whole panel is a little off (a different recipe or revision), not misread."""
     ratios = [f["got"] / f["want"] for f in fields.values() if f["got"] is not None and f["want"]]
     wrong = sum(f["outcome"] == "wrong" for f in fields.values())
-    return len(ratios) >= 3 and wrong >= 2 and all(abs(r - 1) <= 0.15 for r in ratios)
+    return len(ratios) >= 3 and wrong >= 2 and all(abs(r - 1) <= SMALL_RATIO_TOL for r in ratios)
 
 
 def _keys_on(line: str) -> set[str]:
     return {m.lastgroup for m in LABEL_RE.finditer(line)}
+
+
+def _is_unit_error(key: str, f: dict, text: str) -> bool:
+    """kJ read as kcal, x1000 or /1000, salt vs sodium, or only the kJ figure is in the text."""
+    want, got = f["want"], f["got"]
+    if got is not None and want:
+        r = got / want
+        if key == "energy_kcal" and abs(r - KJ_PER_KCAL) <= 0.03 * KJ_PER_KCAL:
+            return True
+        if abs(r - 1000) <= 20 or abs(r - 0.001) <= 0.00002:
+            return True
+        if key == "salt_g" and (abs(r - 2.5) <= 0.1 or abs(r - 0.4) <= 0.02):
+            return True
+    if key == "energy_kcal" and got is None and want:
+        return _kj_in_text(want, text) and not _pattern({str(round(want))}).search(text)
+    return False
+
+
+def _is_shift(key: str, fields: dict) -> bool:
+    """The parsed value is another nutrient's OFF value, or this OFF value went to another nutrient."""
+    want, got = fields[key]["want"], fields[key]["got"]
+    for other, o in fields.items():
+        if other == key:
+            continue
+        if got and o["want"] and _same(got, o["want"], key):
+            return True
+        if want and o["got"] and _same(o["got"], want, key):
+            return True
+    return False
+
+
+def _is_glued_comma(f: dict, text: str) -> bool:
+    """Written `1,7` and parsed as 17, 1 or 0.17: the comma was dropped."""
+    want, got = f["want"], f["got"]
+    if got is None or not want or not _comma_only(want, text):
+        return False
+    digits = float(f"{want:g}".replace(".", ""))
+    return got in {digits, float(int(want)), digits / 10}
+
+
+def _zero_cause(key: str, text: str) -> str:
+    """ "0" is on every label, so only a zero on a row of this nutrient counts as read."""
+    lines = [fold(ln) for ln in normalize(text)]
+    rows = [i for i, ln in enumerate(lines) if ZERO_RE.search(ln)]
+    return "column" if any(key in _keys_on(lines[i]) for i in rows) else "model"
+
+
+def _row_cause(key: str, want: float, text: str) -> str:
+    """The value is in the text: on this nutrient's row (`column`), on a row with no known label
+    (`synonym`), or only on other nutrients' rows (`shift`)."""
+    rx = _pattern(_written_forms(want, key))
+    lines = [fold(ln) for ln in normalize(text)]
+    seen_other = False
+    for i, ln in enumerate(lines):
+        if not rx.search(ln):
+            continue
+        keys = _keys_on(ln) or (_keys_on(lines[i - 1]) if i else set())
+        if key in keys:
+            return "column"
+        seen_other |= bool(keys)
+        if not keys:
+            return "synonym"
+    return "shift" if seen_other else "synonym"
 
 
 def classify(key: str, fields: dict, text: str) -> str:
@@ -157,60 +230,18 @@ def classify(key: str, fields: dict, text: str) -> str:
                only other nutrients' labels -> shift
     """
     f = fields[key]
-    want, got = f["want"], f["got"]
-    if got is not None and want:
-        r = got / want
-        if key == "energy_kcal" and abs(r - KJ_PER_KCAL) <= 0.03 * KJ_PER_KCAL:
-            return "unit"
-        if abs(r - 1000) <= 20 or abs(r - 0.001) <= 0.00002:
-            return "unit"
-        if key == "salt_g" and (abs(r - 2.5) <= 0.1 or abs(r - 0.4) <= 0.02):
-            return "unit"
-    if key == "energy_kcal" and got is None and want:
-        kj = want * KJ_PER_KCAL
-        ints = [int(n) for n in re.findall(r"(?<![\d.,])\d{3,4}(?![\d.,])", text)]
-        if any(abs(n - kj) <= 0.01 * kj for n in ints) and not _pattern({str(round(want))}).search(
-            text
-        ):
-            return "unit"
-    for other, o in fields.items():
-        if other == key:
-            continue
-        if got and o["want"] and _same(got, o["want"], key):
-            return "shift"
-        if want and o["got"] and _same(o["got"], want, key):
-            return "shift"
-    if got is not None and want and _comma_only(want, text):
-        digits = float(f"{want:g}".replace(".", ""))
-        if got in {digits, float(int(want)), digits / 10}:
-            return "comma"
-    if want == 0:  # "0" is on every label, so only a zero on a row of this nutrient counts as read
-        zero = re.compile(r"(?<![\d.,])0(?:[.,]0+)?(?![\d])")
-        lines = [fold(ln) for ln in normalize(text)]
-        rows = [i for i, ln in enumerate(lines) if zero.search(ln)]
-        return "column" if any(key in _keys_on(lines[i]) for i in rows) else "model"
+    if _is_unit_error(key, f, text):
+        return "unit"
+    if _is_shift(key, fields):
+        return "shift"
+    if _is_glued_comma(f, text):
+        return "comma"
+    if f["want"] == 0:
+        return _zero_cause(key, text)
     if not f["in_text"]:
-        return (
-            "truth_disagreement"
-            if f["outcome"] == "wrong" and similar_small_ratio(fields)
-            else "model"
-        )
-    forms = _forms(want) | {x.replace(".", ",") for x in _forms(want)}
-    if key == "energy_kcal":
-        forms |= {str(round(want))}
-    rx = _pattern(forms)
-    lines = [fold(ln) for ln in normalize(text)]
-    seen_other = False
-    for i, ln in enumerate(lines):
-        if not rx.search(ln):
-            continue
-        keys = _keys_on(ln) or (_keys_on(lines[i - 1]) if i else set())
-        if key in keys:
-            return "column"
-        seen_other |= bool(keys)
-        if not keys:
-            return "synonym"
-    return "shift" if seen_other else "synonym"
+        wrong_and_close = f["outcome"] == "wrong" and similar_small_ratio(fields)
+        return "truth_disagreement" if wrong_and_close else "model"
+    return _row_cause(key, f["want"], text)
 
 
 def annotate(row: dict, text: str) -> None:
@@ -225,32 +256,37 @@ def annotate(row: dict, text: str) -> None:
             f["model_read_accuracy"] = False  # no zero on this nutrient's row: the model dropped it
 
 
+# --- scoring one image -------------------------------------------------------------------------
+
+
+def _outcome(key: str, want: float, got: float | None) -> str:
+    if got is None:
+        return "missing"
+    return "correct" if abs(got - want) <= TOL.get(key, DEFAULT_TOL) else "wrong"
+
+
+def _compare(truth: dict[str, float], parsed: dict[str, float]) -> dict[str, dict]:
+    """Per nutrient: the OFF value, what the parser read, and whether it is within tolerance."""
+    fields = {}
+    for key, want in truth.items():
+        got = parsed.get(key)
+        fields[key] = {"want": want, "got": got, "outcome": _outcome(key, want, got)}
+    return fields
+
+
 def score_entry(entry: dict, rec: dict) -> dict:
-    truth = entry["panel"]["nutrients"]
     row = {
         "barcode": entry["barcode"],
         "lang": entry["lang"],
         "name": entry["name"],
         "status": rec["status"],
         "ms": rec["ms"],
-        "prompt_tokens": rec["usage"].get("prompt_tokens"),
-        "completion_tokens": rec["usage"].get("completion_tokens"),
-        "cost_est": eis.cost_est(rec["usage"]),
-        "finish_reason": rec["finish_reason"],
     }
     if rec["status"] != 200:
         return {**row, "error": rec.get("error"), "fields": {}}
     md = strip_regions(rec["text"])
     looped, _ = is_looped(md)
     res = parse(md)
-    fields = {}
-    for key, want in truth.items():
-        got = res.nutrients.get(key)
-        if got is None:
-            outcome = "missing"
-        else:
-            outcome = "correct" if abs(got - want) <= TOL.get(key, DEFAULT_TOL) else "wrong"
-        fields[key] = {"want": want, "got": got, "outcome": outcome}
     out = {
         **row,
         "looped": looped,
@@ -260,15 +296,27 @@ def score_entry(entry: dict, rec: dict) -> dict:
         "verified": res.verified and not looped,
         "per_parsed": res.per,
         "basis": res.basis,
-        "fields": fields,
+        "fields": _compare(entry["panel"]["nutrients"], res.nutrients),
     }
     annotate(out, md)
     return out
 
 
+def score_all(entries: list[dict], recs: list[dict | None]) -> tuple[list[dict], int]:
+    """Score every image that has OCR; returns (rows, number without a cached OCR record)."""
+    rows = [score_entry(e, r) for e, r in zip(entries, recs, strict=True) if r is not None]
+    return rows, len(entries) - len(rows)
+
+
+# --- tallies -----------------------------------------------------------------------------------
+
+
+def _outcome_counts() -> dict[str, int]:
+    return {"correct": 0, "wrong": 0, "missing": 0}
+
+
 def tally(rows: list[dict]) -> dict:
-    counts = {"correct": 0, "wrong": 0, "missing": 0}
-    carbs = {"correct": 0, "wrong": 0, "missing": 0}
+    counts, carbs = _outcome_counts(), _outcome_counts()
     for r in rows:
         for key, f in r["fields"].items():
             counts[f["outcome"]] += 1
@@ -327,130 +375,90 @@ def freeze_baseline(old_path: Path, texts: dict[str, str]) -> None:
     print(f"baseline frozen: {len(old)} rows -> {BASELINE.relative_to(ROOT)}")
 
 
-def ratio(a: float | None) -> str:
-    return "-" if a is None else f"{a:.0%}"
+# --- the summary (what score.json holds) -------------------------------------------------------
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--rescore", action="store_true", help="use cached OCR only, no API calls")
-    ap.add_argument("--limit", type=int)
-    ap.add_argument("--freeze-baseline", type=Path, help="score.json from the old parser")
-    ap.add_argument("--prompt", choices=sorted(eis.PROMPTS), default=eis.DEFAULT_PROMPT)
-    args = ap.parse_args()
+def _chart_row(language: str, t: dict) -> dict:
+    return {
+        "language": language,
+        "images": t["images"],
+        "field_accuracy": t["field_accuracy"],
+        "carbs_accuracy": t["carbs_accuracy"],
+    }
 
-    entries = [json.loads(ln) for ln in (OFF / "manifest.jsonl").read_text().splitlines()]
-    entries = entries[: args.limit] if args.limit else entries
-    cache_dir(args.prompt).mkdir(parents=True, exist_ok=True)
-    with ThreadPoolExecutor(WORKERS) as pool:
-        recs = list(pool.map(lambda e: ocr(e, not args.rescore, args.prompt), entries))
 
-    if args.freeze_baseline:
-        texts = {
-            e["barcode"]: strip_regions(r["text"])
-            for e, r in zip(entries, recs, strict=True)
-            if r and r["status"] == 200
-        }
-        freeze_baseline(args.freeze_baseline, texts)
-        return 0
+def _per_nutrient(ok_rows: list[dict]) -> dict[str, dict]:
+    by_key: dict[str, dict] = {}
+    for r in ok_rows:
+        for key, f in r["fields"].items():
+            by_key.setdefault(key, _outcome_counts())[f["outcome"]] += 1
+    return by_key
 
-    rows, skipped = [], 0
-    for entry, rec in zip(entries, recs, strict=True):
-        if rec is None:
-            skipped += 1
-            continue
-        rows.append(score_entry(entry, rec))
+
+def build_summary(rows: list[dict], recs: list[dict | None], skipped: int) -> tuple[dict, dict]:
+    """Everything score.json reports, plus the `digest` of this run (the report's "after")."""
     ok_rows = [r for r in rows if r["status"] == 200]
-    errors = len(rows) - len(ok_rows)
-
     by_lang: dict[str, list[dict]] = defaultdict(list)
     for r in ok_rows:
         by_lang[r["lang"]].append(r)
     overall = tally(ok_rows)
+    per_language = {k: tally(v) for k, v in sorted(by_lang.items())}
     verified = [r for r in ok_rows if r["verified"]]
+    misses = [f for r in ok_rows for f in r["fields"].values() if f["outcome"] != "correct"]
+    after = digest(rows)
     summary = {
         "overall": overall,
-        "per_language": {k: tally(v) for k, v in sorted(by_lang.items())},
+        "per_language": per_language,
         "verified": {
             **tally(verified),
             "share_of_images": round(len(verified) / max(1, len(ok_rows)), 3),
         },
         "looped": sum(r["looped"] for r in ok_rows),
-        "errors": errors,
+        "errors": len(rows) - len(ok_rows),
         "not_cached": skipped,
-        "tokens_in": {
-            "p50": pct([r["prompt_tokens"] for r in ok_rows], 0.5),
-            "p95": pct([r["prompt_tokens"] for r in ok_rows], 0.95),
-        },
-        "tokens_out": {
-            "p50": pct([r["completion_tokens"] for r in ok_rows], 0.5),
-            "p95": pct([r["completion_tokens"] for r in ok_rows], 0.95),
-        },
         "ms": {
             "p50": pct([r["ms"] for r in ok_rows], 0.5),
             "p95": pct([r["ms"] for r in ok_rows], 0.95),
         },
-        "cost_est_total": round(sum(r["cost_est"] for r in ok_rows if r["cost_est"] is not None), 6)
-        if any(r["cost_est"] is not None for r in ok_rows)
-        else None,
+        "misses": {
+            "total": len(misses),
+            "value_in_ocr_text": sum(bool(f["in_text"]) for f in misses),
+            "value_not_in_ocr_text": sum(not f["in_text"] for f in misses),
+        },
+        "model_read_accuracy": after["model_read_accuracy"],
+        "categories": after["categories"],
+        "parse_suspect_images": sum(r["parse_suspect"] for r in ok_rows),
+        "chart": [
+            _chart_row(lang, t) for lang, t in per_language.items() if t["images"] >= MIN_CHART_N
+        ]
+        + [_chart_row("all", overall)],
+        "excluded_from_chart": {
+            lang: t["images"] for lang, t in per_language.items() if t["images"] < MIN_CHART_N
+        },
+        "table_outputs": sum(
+            "<table" in (r["text"] or "").lower() for r in recs if r and r["status"] == 200
+        ),
     }
-    misses = [f for r in ok_rows for f in r["fields"].values() if f["outcome"] != "correct"]
-    summary["misses"] = {
-        "total": len(misses),
-        "value_in_ocr_text": sum(bool(f["in_text"]) for f in misses),
-        "value_not_in_ocr_text": sum(not f["in_text"] for f in misses),
-    }
-    after = digest(rows)
-    summary["model_read_accuracy"] = after["model_read_accuracy"]
-    summary["categories"] = after["categories"]
-    summary["parse_suspect_images"] = sum(r["parse_suspect"] for r in ok_rows)
-    summary["chart"] = [
-        {
-            "language": lang,
-            "images": t["images"],
-            "field_accuracy": t["field_accuracy"],
-            "carbs_accuracy": t["carbs_accuracy"],
-        }
-        for lang, t in summary["per_language"].items()
-        if t["images"] >= MIN_CHART_N
-    ] + [
-        {
-            "language": "all",
-            "images": overall["images"],
-            "field_accuracy": overall["field_accuracy"],
-            "carbs_accuracy": overall["carbs_accuracy"],
-        }
-    ]
-    summary["excluded_from_chart"] = {
-        lang: t["images"]
-        for lang, t in summary["per_language"].items()
-        if t["images"] < MIN_CHART_N
-    }
-    before = None
-    summary["prompt"] = args.prompt
-    summary["table_outputs"] = sum(
-        "<table" in (r["text"] or "").lower() for r in recs if r and r["status"] == 200
-    )
-    if BASELINE.exists() and args.prompt == "official":
+    if BASELINE.exists():
         base_rows = json.loads(BASELINE.read_text())["rows"]
         keep = {r["barcode"] for r in rows}  # same images on both sides
-        before = digest([r for r in base_rows if r["barcode"] in keep])
-        summary["before"] = before
-    by_key: dict[str, dict] = {}
-    for r in ok_rows:
-        for key, f in r["fields"].items():
-            by_key.setdefault(key, {"correct": 0, "wrong": 0, "missing": 0})[f["outcome"]] += 1
-    summary["per_nutrient"] = by_key
+        summary["before"] = digest([r for r in base_rows if r["barcode"] in keep])
+    summary["per_nutrient"] = _per_nutrient(ok_rows)
+    return summary, after
 
-    REPORTS.mkdir(parents=True, exist_ok=True)
-    names = report_names(args.prompt)
-    payload = json.dumps({"summary": summary, "rows": rows}, indent=2, ensure_ascii=False)
-    for n in names:
-        (REPORTS / f"{n}.json").write_text(payload)
 
-    def acc(t: dict) -> str:
-        return "-" if t["field_accuracy"] is None else f"{t['field_accuracy']:.0%}"
+# --- the Markdown report -----------------------------------------------------------------------
 
+
+def ratio(a: float | None) -> str:
+    return "-" if a is None else f"{a:.0%}"
+
+
+def _count(t: dict) -> str:
+    return f"{ratio(t['field_accuracy'])} ({t['correct']}/{t['fields']})"
+
+
+def _language_table(summary: dict) -> list[str]:
     md = [
         "# OFF score",
         "",
@@ -459,93 +467,86 @@ def main() -> int:
         "| Language | Images | Carbs correct | Fields correct | wrong | missing |",
         "|---|---|---|---|---|---|",
     ]
-    for lang, t in {**summary["per_language"], "**all**": overall}.items():
+    for lang, t in {**summary["per_language"], "**all**": summary["overall"]}.items():
         if lang in summary["excluded_from_chart"]:
             lang = f"{lang} (n={t['images']})"
-        carbs = "-" if t["carbs_accuracy"] is None else f"{t['carbs_accuracy']:.0%}"
         md.append(
-            f"| {lang} | {t['images']} | {carbs} | {acc(t)} ({t['correct']}/{t['fields']}) | {t['wrong']} | {t['missing']} |"
+            f"| {lang} | {t['images']} | {ratio(t['carbs_accuracy'])} | {_count(t)} | {t['wrong']} | {t['missing']} |"
         )
-    v = summary["verified"]
-    md += [
+    return md
+
+
+def _status_lines(summary: dict, n_ok: int) -> list[str]:
+    v, m = summary["verified"], summary["misses"]
+    return [
         "",
         (
-            f"- Verified (panel parsed, no cut-off flag, not looped): {v['images']} of {len(ok_rows)} images; "
-            f"field accuracy among them {acc(v)}, carbs {'-' if v['carbs_accuracy'] is None else format(v['carbs_accuracy'], '.0%')}"
+            f"- Verified (panel parsed, no cut-off flag, not looped): {v['images']} of {n_ok} images; "
+            f"field accuracy among them {ratio(v['field_accuracy'])}, carbs {ratio(v['carbs_accuracy'])}"
         ),
-        f"- Looped outputs: {summary['looped']}; API errors: {errors}; not cached: {skipped}",
-        (
-            f"- Tokens in p50/p95: {summary['tokens_in']['p50']}/{summary['tokens_in']['p95']}; "
-            f"out p50/p95: {summary['tokens_out']['p50']}/{summary['tokens_out']['p95']}"
-        ),
+        f"- Looped outputs: {summary['looped']}; API errors: {summary['errors']}; not cached: {summary['not_cached']}",
         f"- Latency ms p50/p95: {summary['ms']['p50']}/{summary['ms']['p95']}",
-    ]
-    if summary["cost_est_total"] is not None:
-        md.append(f"- cost_est for the whole run: ${summary['cost_est_total']:.5f}")
-    m = summary["misses"]
-    md += [
         (
             f"- Of {m['total']} wrong or missing fields, {m['value_in_ocr_text']} have the OFF value "
             f"somewhere in the OCR text (parser or column choice may be at fault) and "
             f"{m['value_not_in_ocr_text']} do not (model misread, photo is not that label, or OFF is wrong)"
         ),
-    ]
-    md += [
         (
             f"- Model read accuracy (OFF value appears in the OCR text, normalised): "
             f"{ratio(summary['model_read_accuracy'])}"
         ),
         f"- Panels flagged parse_suspect: {summary['parse_suspect_images']}",
-        f"- Prompt `{args.prompt}`: {summary['table_outputs']} of {len(ok_rows)} outputs contain `<table>`",
+        f"- {summary['table_outputs']} of {n_ok} outputs contain `<table>`",
     ]
-    if before:
-        a, b = after, before
-        md += [
-            "",
-            "## Before / after the parser changes",
-            "",
-            (
-                "Before = the parser as of the first full score (frozen in `baseline/` next to this report); same 50 images, "
-                "same cached OCR text, same classifier on both sides."
-            ),
-            "",
-            "| | before | after |",
-            "|---|---|---|",
-            f"| Carbs correct | {ratio(b['carbs_accuracy'])} | {ratio(a['carbs_accuracy'])} |",
-            (
-                f"| Fields correct | {ratio(b['field_accuracy'])} ({b['correct']}/{b['fields']}) | "
-                f"{ratio(a['field_accuracy'])} ({a['correct']}/{a['fields']}) |"
-            ),
-            f"| Wrong | {b['wrong']} | {a['wrong']} |",
-            f"| Missing | {b['missing']} | {a['missing']} |",
-            f"| Model read accuracy | {ratio(b['model_read_accuracy'])} | {ratio(a['model_read_accuracy'])} |",
-            f"| Images verified | {b['verified']['images']} | {a['verified']['images']} |",
-            (
-                f"| Field accuracy among verified | {ratio(b['verified']['field_accuracy'])} "
-                f"({b['verified']['correct']}/{b['verified']['fields']}) | "
-                f"{ratio(a['verified']['field_accuracy'])} ({a['verified']['correct']}/{a['verified']['fields']}) |"
-            ),
-            "",
-            "| Language | before | after |",
-            "|---|---|---|",
-        ]
-        for lang in a["per_language"]:
-            bl, al = b["per_language"].get(lang, {}), a["per_language"][lang]
-            md.append(
-                f"| {lang} | {ratio(bl.get('field_accuracy'))} ({bl.get('correct')}/{bl.get('fields')}) | "
-                f"{ratio(al['field_accuracy'])} ({al['correct']}/{al['fields']}) |"
-            )
-    if summary["excluded_from_chart"]:
-        ex = ", ".join(f"{k} (n={v})" for k, v in summary["excluded_from_chart"].items())
-        md += [
-            "",
-            (
-                f"Languages with fewer than {MIN_CHART_N} images are listed with their n but left out of "
-                f"`chart` in the JSON (chart data): {ex}. Their percentages move 50 points per image."
-            ),
-        ]
-    cats = summary["categories"]
-    md += [
+
+
+def _before_after(before: dict, after: dict) -> list[str]:
+    b, a = before, after
+    md = [
+        "",
+        "## Before / after the parser changes",
+        "",
+        (
+            "Before = the parser as of the first full score (frozen in `baseline/` next to this report); same 50 images, "
+            "same cached OCR text, same classifier on both sides."
+        ),
+        "",
+        "| | before | after |",
+        "|---|---|---|",
+        f"| Carbs correct | {ratio(b['carbs_accuracy'])} | {ratio(a['carbs_accuracy'])} |",
+        f"| Fields correct | {_count(b)} | {_count(a)} |",
+        f"| Wrong | {b['wrong']} | {a['wrong']} |",
+        f"| Missing | {b['missing']} | {a['missing']} |",
+        f"| Model read accuracy | {ratio(b['model_read_accuracy'])} | {ratio(a['model_read_accuracy'])} |",
+        f"| Images verified | {b['verified']['images']} | {a['verified']['images']} |",
+        f"| Field accuracy among verified | {_count(b['verified'])} | {_count(a['verified'])} |",
+        "",
+        "| Language | before | after |",
+        "|---|---|---|",
+    ]
+    for lang in a["per_language"]:
+        bl, al = b["per_language"].get(lang, {}), a["per_language"][lang]
+        md.append(
+            f"| {lang} | {ratio(bl.get('field_accuracy'))} ({bl.get('correct')}/{bl.get('fields')}) | "
+            f"{_count(al)} |"
+        )
+    return md
+
+
+def _excluded_note(excluded: dict[str, int]) -> list[str]:
+    ex = ", ".join(f"{k} (n={v})" for k, v in excluded.items())
+    return [
+        "",
+        (
+            f"Languages with fewer than {MIN_CHART_N} images are listed with their n but left out of "
+            f"`chart` in the JSON (chart data): {ex}. Their percentages move 50 points per image."
+        ),
+    ]
+
+
+def _causes_table(summary: dict) -> list[str]:
+    before, cats = summary.get("before"), summary["categories"]
+    md = [
         "",
         "## Why fields are wrong or missing",
         "",
@@ -557,39 +558,104 @@ def main() -> int:
     for c in CATEGORIES:
         bc = "-" if not before else before["categories"][c]
         md.append(f"| {c} | {bc} | {cats[c]} | {CATEGORY_HELP[c]} |")
+    before_total = "-" if not before else sum(before["categories"].values())
     md += [
-        f"| **total** | {'-' if not before else sum(before['categories'].values())} | {sum(cats.values())} | |",
+        f"| **total** | {before_total} | {sum(cats.values())} | |",
         "",
         (
             "A zero-valued OFF field counts as read only if a zero sits on a row of that nutrient. "
             "Multi-language blobs with 20+ languages (labels the parser has no synonyms for) land in "
             "`synonym`; they are out of scope."
         ),
+    ]
+    return md
+
+
+def _per_nutrient_table(by_key: dict[str, dict]) -> list[str]:
+    md = [
         "",
         "## Per nutrient",
         "",
         "| Nutrient | correct | wrong | missing |",
         "|---|---|---|---|",
     ]
-    md += [f"| {k} | {c['correct']} | {c['wrong']} | {c['missing']} |" for k, c in by_key.items()]
-    bad = [(r, k, f) for r in ok_rows for k, f in r["fields"].items() if f["outcome"] == "wrong"]
-    if bad:
-        md += [
-            "",
-            "## Wrong values (parsed, outside tolerance)",
-            "",
-            "| Barcode | Lang | Nutrient | OFF | Parsed |",
-            "|---|---|---|---|---|",
-        ]
-        md += [
-            f"| {r['barcode']} | {r['lang']} | {k} | {f['want']} | {f['got']} |" for r, k, f in bad
-        ]
-    for n in names:
-        (REPORTS / f"{n}.md").write_text("\n".join(md) + "\n")
+    return md + [
+        f"| {k} | {c['correct']} | {c['wrong']} | {c['missing']} |" for k, c in by_key.items()
+    ]
 
+
+def _wrong_values_table(ok_rows: list[dict]) -> list[str]:
+    bad = [(r, k, f) for r in ok_rows for k, f in r["fields"].items() if f["outcome"] == "wrong"]
+    if not bad:
+        return []
+    md = [
+        "",
+        "## Wrong values (parsed, outside tolerance)",
+        "",
+        "| Barcode | Lang | Nutrient | OFF | Parsed |",
+        "|---|---|---|---|---|",
+    ]
+    return md + [
+        f"| {r['barcode']} | {r['lang']} | {k} | {f['want']} | {f['got']} |" for r, k, f in bad
+    ]
+
+
+def render_report(summary: dict, after: dict, ok_rows: list[dict]) -> str:
+    md = _language_table(summary) + _status_lines(summary, len(ok_rows))
+    if "before" in summary:
+        md += _before_after(summary["before"], after)
+    if summary["excluded_from_chart"]:
+        md += _excluded_note(summary["excluded_from_chart"])
+    md += _causes_table(summary)
+    md += _per_nutrient_table(summary["per_nutrient"])
+    md += _wrong_values_table(ok_rows)
+    return "\n".join(md) + "\n"
+
+
+# --- entry point -------------------------------------------------------------------------------
+
+
+def load_entries(limit: int | None) -> list[dict]:
+    entries = [json.loads(ln) for ln in (OFF / "manifest.jsonl").read_text().splitlines()]
+    return entries[:limit] if limit else entries
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--rescore", action="store_true", help="use cached OCR only, no API calls")
+    ap.add_argument("--limit", type=int)
+    ap.add_argument("--freeze-baseline", type=Path, help="score.json from the old parser")
+    args = ap.parse_args()
+
+    entries = load_entries(args.limit)
+    CACHE.mkdir(parents=True, exist_ok=True)
+    with ThreadPoolExecutor(WORKERS) as pool:
+        recs = list(pool.map(lambda e: ocr(e, not args.rescore), entries))
+
+    if args.freeze_baseline:
+        texts = {
+            e["barcode"]: strip_regions(r["text"])
+            for e, r in zip(entries, recs, strict=True)
+            if r and r["status"] == 200
+        }
+        freeze_baseline(args.freeze_baseline, texts)
+        return 0
+
+    rows, skipped = score_all(entries, recs)
+    ok_rows = [r for r in rows if r["status"] == 200]
+    summary, after = build_summary(rows, recs, skipped)
+
+    REPORTS.mkdir(parents=True, exist_ok=True)
+    (REPORTS / "score.json").write_text(
+        json.dumps({"summary": summary, "rows": rows}, indent=2, ensure_ascii=False)
+    )
+    (REPORTS / "score.md").write_text(render_report(summary, after, ok_rows))
+
+    overall = summary["overall"]
     print(
         f"{len(ok_rows)} images, carbs {overall['carbs_accuracy']}, fields {overall['field_accuracy']} "
-        f"({overall['correct']}/{overall['fields']}), looped {summary['looped']}, errors {errors} -> {REPORTS.relative_to(ROOT)}/{names[0]}.md"
+        f"({overall['correct']}/{overall['fields']}), looped {summary['looped']}, "
+        f"errors {summary['errors']} -> {REPORTS.relative_to(ROOT)}/score.md"
     )
     return 0
 

@@ -15,6 +15,21 @@ from elasticsearch import Elasticsearch, NotFoundError
 
 load_dotenv()
 
+KINDS = ("contains", "may_contain")
+SEARCH_FIELDS = ["product_name^3", "plain_text", "unverified_text"]  # product name counts triple
+HIGHLIGHT = {
+    "fields": {"plain_text": {}, "unverified_text": {}},
+    "pre_tags": ["<mark>"],
+    "post_tags": ["</mark>"],
+    "fragment_size": 120,
+    "number_of_fragments": 1,
+}
+NOT_RETURNED = ["raw_markdown", "plain_text"]  # big, and the Library does not show them
+AGG_SIZE = 20  # most allergens / languages a Library panel lists
+EMPTY_AGGS = {"total": 0, "allergens": [], "languages": []}
+
+# --- the mapping -------------------------------------------------------------------------------
+
 NUTRIENT_FIELDS = (
     "energy_kcal",
     "energy_kj",
@@ -42,7 +57,6 @@ MAPPING = {
         "captured_at": {"type": "date"},
         "source": {"type": "keyword"},  # kitchen | off | demo
         "image_path": {"type": "keyword"},
-        "barcode": {"type": "keyword"},
         "product_name": {"type": "text", "fields": {"raw": {"type": "keyword"}}},
         "language": {"type": "keyword"},  # user-set or from OFF; never model-detected
         "nutrients": {
@@ -53,16 +67,7 @@ MAPPING = {
                 "basis": {"type": "keyword"},  # 100g | 100ml | serving | unknown
             }
         },
-        "nutrients_verified": {"type": "boolean"},
         "parse_flags": {"type": "keyword"},
-        "off_match": {
-            "properties": {
-                "status": {"type": "keyword"},
-                "carbohydrates_100g": {"type": "float"},
-                "product_name": {"type": "text"},
-                "checked_at": {"type": "date"},
-            }
-        },
         "unverified_text": {"type": "text"},
         # allergen words as read in unverified_text, one entry per allergen; nested so that a
         # name keeps its own kind (contains | may_contain) in filters and aggregations
@@ -76,15 +81,15 @@ MAPPING = {
         "telemetry": {
             "properties": {
                 "endpoint": {"type": "keyword"},
-                "prompt_variant": {"type": "keyword"},
-                "prompt_tokens": {"type": "integer"},
-                "completion_tokens": {"type": "integer"},
+                "task": {"type": "keyword"},
                 "ocr_ms": {"type": "integer"},
-                "cost_est": {"type": "float"},
             }
         },
     }
 }
+
+
+# --- connection and single-document calls ------------------------------------------------------
 
 
 def index_name() -> str:
@@ -114,7 +119,7 @@ def index_doc(doc: dict) -> None:
 
 
 def update_doc(doc_id: str, fields: dict) -> None:
-    """Merge `fields` into an existing document (e.g. a late Open Food Facts cross-check)."""
+    """Merge `fields` into an existing document (a name or language edit)."""
     client().update(index=index_name(), id=doc_id, doc=fields, refresh="wait_for")
 
 
@@ -125,75 +130,53 @@ def get_doc(doc_id: str) -> dict | None:
         return None
 
 
-KINDS = ("contains", "may_contain")
+# --- queries -----------------------------------------------------------------------------------
 
 
-def _filters(
-    allergens: list[str], language: str | None, verified: bool | None, kind: str | None = None
-) -> list[dict]:
+def _nested_allergen(query: dict) -> dict:
+    return {"nested": {"path": "allergen_mentions", "query": query}}
+
+
+def _filters(allergens: list[str], language: str | None, kind: str | None = None) -> list[dict]:
     """Every named allergen must be present (AND); `kind` limits them to contains / may_contain."""
     out: list[dict] = []
     for a in allergens:
         must = [{"term": {"allergen_mentions.name": a}}]
         if kind in KINDS:
             must.append({"term": {"allergen_mentions.kind": kind}})
-        out.append({"nested": {"path": "allergen_mentions", "query": {"bool": {"filter": must}}}})
+        out.append(_nested_allergen({"bool": {"filter": must}}))
     if kind in KINDS and not allergens:  # "anything that contains / may contain something"
-        out.append(
-            {
-                "nested": {
-                    "path": "allergen_mentions",
-                    "query": {"term": {"allergen_mentions.kind": kind}},
-                }
-            }
-        )
+        out.append(_nested_allergen({"term": {"allergen_mentions.kind": kind}}))
     if language:
         out.append({"term": {"language": language}})
-    if verified is not None:
-        out.append({"term": {"nutrients_verified": verified}})
     return out
 
 
 def _query(q: str, filters: list[dict]) -> dict:
-    must: list[dict] = (
-        [
-            {
-                "multi_match": {
-                    "query": q,
-                    "fields": ["product_name^3", "plain_text", "unverified_text"],
-                    "fuzziness": "AUTO",
-                }
-            }
-        ]
-        if q.strip()
-        else [{"match_all": {}}]
-    )
-    return {"bool": {"must": must, "filter": filters}}
+    """Text match (typo-tolerant) when `q` is given, everything otherwise; `filters` never score."""
+    text = {"multi_match": {"query": q, "fields": SEARCH_FIELDS, "fuzziness": "AUTO"}}
+    return {"bool": {"must": [text] if q.strip() else [{"match_all": {}}], "filter": filters}}
+
+
+# --- search and aggregations (the Library) -----------------------------------------------------
 
 
 def _search(
     q: str = "",
     allergens: list[str] | None = None,
     language: str | None = None,
-    verified: bool | None = None,
     size: int = 24,
     kind: str | None = None,
 ) -> dict:
-    """Keyword search with optional allergen / kind / language / verified filters."""
+    """Keyword search with optional allergen / kind / language filters."""
     body = client().search(
         index=index_name(),
-        query=_query(q, _filters(allergens or [], language, verified, kind)),
+        query=_query(q, _filters(allergens or [], language, kind)),
         sort=[{"_score": "desc"}, {"captured_at": "desc"}]
         if q.strip()
         else [{"captured_at": "desc"}],
-        highlight={
-            "fields": {"plain_text": {}, "unverified_text": {}},
-            "pre_tags": ["<mark>"],
-            "post_tags": ["</mark>"],
-            "fragment_size": 120,
-            "number_of_fragments": 1,
-        },
-        source_excludes=["raw_markdown", "plain_text"],
+        highlight=HIGHLIGHT,
+        source_excludes=NOT_RETURNED,
         size=size,
     )
     hits = [
@@ -224,27 +207,25 @@ def _aggregate(
     q: str = "",
     allergens: list[str] | None = None,
     language: str | None = None,
-    verified: bool | None = None,
     kind: str | None = None,
 ) -> dict:
     """Counts for the Library panel: allergen mentions as read (split contains / may contain),
-    languages, verified share."""
+    languages."""
     body = client().search(
         index=index_name(),
-        query=_query(q, _filters(allergens or [], language, verified, kind)),
+        query=_query(q, _filters(allergens or [], language, kind)),
         size=0,
         aggs={
             "allergens": {
                 "nested": {"path": "allergen_mentions"},
                 "aggs": {
                     "names": {
-                        "terms": {"field": "allergen_mentions.name", "size": 20},
+                        "terms": {"field": "allergen_mentions.name", "size": AGG_SIZE},
                         "aggs": {"kinds": {"terms": {"field": "allergen_mentions.kind"}}},
                     }
                 },
             },
-            "languages": {"terms": {"field": "language", "size": 20}},
-            "verified": {"terms": {"field": "nutrients_verified"}},
+            "languages": {"terms": {"field": "language", "size": AGG_SIZE}},
         },
     )
     aggs = body["aggregations"]
@@ -254,19 +235,15 @@ def _aggregate(
         "languages": [
             {"key": b["key"], "count": b["doc_count"]} for b in aggs["languages"]["buckets"]
         ],
-        "verified": {
-            ("true" if b["key"] in (1, True, "true") else "false"): b["doc_count"]
-            for b in aggs["verified"]["buckets"]
-        },
     }
 
 
-EMPTY_AGGS = {"total": 0, "allergens": [], "languages": [], "verified": {}}
+# `search` / `aggregate` are what the API calls: before the first capture there is no index, which
+# is an empty library and not an error.
 
 
 def search(*args, **kwargs) -> dict:
-    """Keyword search (see `_search`). Before the first capture there is no index: that is an empty
-    library, not an error."""
+    """Keyword search (see `_search`)."""
     try:
         return _search(*args, **kwargs)
     except NotFoundError:

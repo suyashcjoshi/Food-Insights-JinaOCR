@@ -17,9 +17,6 @@
     <section id="screen-capture" class="screen" aria-label="Capture">
       <header class="topbar">
         <h1>Food Insights</h1>
-        <button id="dev-open" class="icon" type="button" aria-label="Developer settings">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
-        </button>
       </header>
 
       <div class="finder" id="finder">
@@ -35,7 +32,6 @@
         <button id="primary" class="primary" type="button">Take photo</button>
         <div class="row2">
           <button id="choose" class="text" type="button">Choose from library</button>
-          <button id="scan" class="text" type="button">Scan barcode (optional)</button>
         </div>
       </div>
     </section>
@@ -61,7 +57,7 @@
         </section>
         <footer class="foot">
           <svg class="elastic" viewBox="0 0 40 12" width="40" height="12" role="img" aria-label="Elastic"><rect x="0" y="0" width="8" height="12" rx="2" fill="#FEC514"/><rect x="8" y="0" width="8" height="12" rx="2" fill="#F04E98"/><rect x="16" y="0" width="8" height="12" rx="2" fill="#1BA9F5"/><rect x="24" y="0" width="8" height="12" rx="2" fill="#00BFB3"/><rect x="32" y="0" width="8" height="12" rx="2" fill="#343741"/></svg>
-          <p>Contains data from Open Food Facts (ODbL). OCR by jina-ocr-v1 on Elastic Inference Service.</p>
+          <p>Contains data from Open Food Facts (ODbL). Read by Jina Reader on Elastic Inference Service.</p>
         </footer>
       </div>
     </section>
@@ -93,8 +89,8 @@
           <p id="r-read" class="secondary"></p>
         </div>
       </div>
+      <p id="r-pipe" class="pipe" aria-label="Pipeline: extract, ingest, search"></p>
       <div class="chiprow">
-        <div id="r-xchip" class="xchip"></div>
         <label class="langchip"><span class="sr">Language of the pack</span>
           <select id="r-lang" aria-label="Language of the pack">
             <option value="">Language not set</option>
@@ -107,16 +103,19 @@
       </div>
       <p id="r-msg" class="msg" role="status" hidden></p>
 
+      <section id="r-nopanel" class="card nopanel" aria-label="No nutrition panel" hidden>
+        <h2>No nutrition panel found</h2>
+        <p class="secondary">Try a sharper photo with the whole panel in the frame. The text we could read is below.</p>
+      </section>
+
       <div id="r-hero" class="hero"></div>
       <p id="r-basis" class="secondary basis"></p>
 
-      <section class="card" aria-label="Nutrition panel">
-        <div class="card-head"><h2>Nutrition panel</h2><span id="r-verified" class="verified"></span></div>
+      <section id="r-panel" class="card" aria-label="Nutrition panel">
+        <div class="card-head"><h2>Nutrition panel</h2></div>
         <div id="r-rows" class="rows"></div>
         <button id="r-more" class="text left" type="button" hidden>More</button>
       </section>
-      <p id="r-adds" class="adds"></p>
-      <ul id="r-flags" class="flags"></ul>
 
       <section class="card amber" aria-label="Unverified text">
         <h2>Unverified, check the pack</h2>
@@ -132,19 +131,15 @@
       <p id="r-stored" class="caption"></p>
 
       <details id="r-raw" class="raw">
-        <summary>Show raw</summary>
+        <summary>Extracted text</summary>
         <div class="tabs2" role="tablist">
-          <button type="button" role="tab" data-raw="output" aria-selected="true">Output</button>
-          <button type="button" role="tab" data-raw="request" aria-selected="false">Request</button>
+          <button type="button" role="tab" data-raw="markdown" aria-selected="true">Markdown</button>
+          <button type="button" role="tab" data-raw="json" aria-selected="false">JSON</button>
         </div>
         <pre id="r-raw-body"></pre>
       </details>
+      <button id="r-api" class="secondary-btn" type="button" hidden>Raw request &amp; response</button>
 
-      <section id="r-dev" class="card dev" hidden>
-        <h2>Developer</h2>
-        <p id="r-dev-prompt" class="secondary"></p>
-        <button id="r-reread" class="text left" type="button"></button>
-      </section>
       <div class="spacer"></div>
     </div>
     <div class="sheet-actions">
@@ -166,34 +161,22 @@
     <button class="primary close" type="button">Got it</button>
   </div>
 
-  <div id="sheet-dev" class="sheet low" role="dialog" aria-modal="true" aria-labelledby="dev-title" hidden>
-    <h2 id="dev-title">Developer</h2>
-    <label class="switch"><input id="dev-toggle" type="checkbox" role="switch"><span>Show developer tools</span></label>
-    <p class="secondary">Shows the prompt choice here, and the exact request and a re-read button on each result. Off by default.</p>
-    <div id="dev-prompt-wrap" hidden>
-      <label for="prompt">Prompt</label>
-      <select id="prompt"></select>
-      <p id="prompt-text" class="secondary"></p>
+  <div id="sheet-raw" class="sheet low tall" role="dialog" aria-modal="true" aria-labelledby="raw-title" hidden>
+    <h2 id="raw-title">Raw request &amp; response</h2>
+    <p class="secondary">The exact call this app sent to the Elastic Inference Service, and what came back. The image is shortened.</p>
+    <div class="rawscroll">
+      <h3>Request</h3>
+      <p id="raw-line" class="mono-line"></p>
+      <pre id="raw-req"></pre>
+      <h3>Response</h3>
+      <pre id="raw-res"></pre>
     </div>
     <button class="primary close" type="button">Done</button>
   </div>
 
-  <div id="sheet-barcode" class="sheet low" role="dialog" aria-modal="true" aria-labelledby="bc-title" hidden>
-    <h2 id="bc-title">Barcode</h2>
-    <p class="secondary" id="bc-help">Type the digits under the barcode. Open Food Facts uses it to double-check the carbs.</p>
-    <input id="bc-input" type="text" inputmode="numeric" autocomplete="off" placeholder="3017620425035" aria-label="Barcode digits">
-    <p id="bc-error" class="msg" role="alert" hidden></p>
-    <button id="bc-scan" class="text left" type="button" hidden>Scan from a photo</button>
-    <div class="row2">
-      <button id="bc-clear" class="text" type="button">Remove barcode</button>
-      <button id="bc-save" class="primary small" type="button">Save barcode</button>
-    </div>
-  </div>
-
   <input id="cam" type="file" accept="image/*" capture="environment" hidden>
   <input id="pick" type="file" accept="image/*" hidden>
-  <input id="bc-photo" type="file" accept="image/*" capture="environment" hidden>
 </div>
-<script src="app.js"></script>
+<script type="module" src="js/main.js"></script>
 </body>
 </html>

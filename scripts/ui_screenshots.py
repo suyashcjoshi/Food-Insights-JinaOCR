@@ -27,7 +27,7 @@ from websockets.sync.client import connect
 
 warnings.filterwarnings("ignore")
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "data" / "scratch" / "ui"  # docs/screenshots/ holds the four that ship in the README
+OUT = ROOT / "data" / "scratch" / "ui"  # screenshots/ holds the three that ship in the README
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 W, H = 390, 844
 
@@ -101,6 +101,12 @@ class Page:
         self.call("Page.navigate", url=url)
         time.sleep(settle)
 
+    def click(self, selector: str) -> None:
+        self.ev(f"document.querySelector('{selector}').click()")
+
+    def scroll(self, selector: str, top: int) -> None:
+        self.ev(f"document.querySelector('{selector}').scrollTop = {top}")
+
     def wait(self, js: str, secs: float = 90) -> bool:
         t = time.time()
         while time.time() - t < secs:
@@ -124,6 +130,101 @@ class Page:
         self.proc.terminate()
 
 
+RESULT_OPEN = "!document.querySelector('#sheet-result').hidden"
+
+
+def empty_library_and_capture(p: Page, base: str, photo: str) -> None:
+    """Capture and Library on an empty index, then the chosen photo and the framing sheet."""
+    p.go(base + "/")
+    p.ev("localStorage.clear()")
+    p.go(base + "/")
+    p.shot("capture")
+    fits = p.ev(
+        "(() => { const s = document.querySelector('#screen-capture'); return [s.scrollHeight, s.clientHeight]; })()"
+    )
+    print(
+        "capture screen scrollHeight/clientHeight:",
+        fits,
+        "-> fits" if fits[0] <= fits[1] else "-> OVERFLOWS",
+    )
+    finder = p.ev("document.querySelector('#finder').getBoundingClientRect().height")
+    print(f"viewfinder height {finder:.0f} px of {H} ({finder / H:.0%})")
+    p.click("[data-tab=library]")
+    p.wait("!document.querySelector('#empty').hidden", 20)
+    p.shot("library_empty")
+    p.click("[data-tab=capture]")
+
+    p.upload("#pick", photo)
+    time.sleep(0.8)
+    p.shot("capture_photo")
+    p.click("#why-open")
+    p.shot("why_framing")
+    p.click("#sheet-why .close")
+
+
+def result_screens(p: Page) -> None:
+    """One real read, then the Result sheet from top to bottom and the raw request and response."""
+    p.click("#primary")
+    p.shot("capture_reading")
+    print("result sheet opened:", p.wait(RESULT_OPEN, 180))
+    time.sleep(0.8)
+    p.shot("result_top")
+    hero_bottom, actions_top = p.ev(
+        "(() => { const h = document.querySelector('#r-hero').getBoundingClientRect(), "
+        "a = document.querySelector('.sheet-actions').getBoundingClientRect(); return [Math.round(h.bottom), Math.round(a.top)]; })()"
+    )
+    print(
+        "result hero bottom / action bar top:",
+        [hero_bottom, actions_top],
+        "-> above the fold" if hero_bottom < actions_top else "-> BELOW THE FOLD",
+    )
+    p.scroll("#r-scroll", 560)
+    p.shot("result_scrolled")
+    p.scroll("#r-scroll", 99999)
+    p.shot("result_bottom")
+    p.scroll("#r-scroll", 0)
+    p.click("#r-more")
+    p.click("#r-unv-more")
+    p.scroll("#r-scroll", 420)
+    p.shot("result_expanded")
+    p.click("#r-api")
+    p.shot("raw_request_response")
+    p.click("#sheet-raw .close")
+    p.click("#r-back")
+    p.ev("localStorage.clear()")
+
+
+def filled_library(p: Page, base: str) -> None:
+    p.go(base + "/")
+    p.ev("localStorage.clear()")
+    p.click("[data-tab=library]")
+    p.wait("document.querySelectorAll('.tile').length > 0", 30)
+    time.sleep(1.5)
+    p.shot("library_filled")
+    p.scroll("#lib-scroll", 99999)
+    p.shot("library_allergens")
+    p.scroll("#lib-scroll", 0)
+
+
+def dark_and_desktop(p: Page) -> None:
+    """The same screens with the dark tokens, then a desktop window (still a phone-width column)."""
+    p.scheme("dark")
+    p.scroll("#lib-scroll", 0)
+    p.shot("library_dark")
+    p.click("[data-tab=capture]")
+    p.shot("capture_dark")
+    p.click("[data-tab=library]")
+    p.click(".tile")
+    p.wait(RESULT_OPEN, 15)
+    time.sleep(1)
+    p.shot("result_dark")
+    p.click("#r-back")
+    p.scheme("light")
+    p.size(1280, 800, mobile=False)
+    time.sleep(0.5)
+    p.shot("desktop_column")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="http://127.0.0.1:8000")
@@ -133,122 +234,10 @@ def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     p = Page()
     try:
-        # ---- empty library, then capture, on the empty index ----
-        p.go(args.empty_base + "/")
-        p.ev("document.querySelector('#dev-toggle') && (localStorage.clear())")
-        p.go(args.empty_base + "/")
-        p.shot("capture")
-        over = p.ev(
-            "(() => { const s = document.querySelector('#screen-capture'); return [s.scrollHeight, s.clientHeight]; })()"
-        )
-        print(
-            "capture screen scrollHeight/clientHeight:",
-            over,
-            "-> fits" if over[0] <= over[1] else "-> OVERFLOWS",
-        )
-        fh = p.ev("document.querySelector('#finder').getBoundingClientRect().height")
-        print(f"viewfinder height {fh:.0f} px of {H} ({fh / H:.0%})")
-        p.ev("document.querySelector('[data-tab=library]').click()")
-        p.wait("!document.querySelector('#empty').hidden", 20)
-        p.shot("library_empty")
-        p.ev("document.querySelector('[data-tab=capture]').click()")
-
-        p.upload("#pick", args.yogurt)
-        time.sleep(0.8)
-        p.shot("capture_photo")
-        p.ev("document.querySelector('#why-open').click()")
-        p.shot("why_framing")
-        p.ev("document.querySelector('#sheet-why .close').click()")
-        p.ev("document.querySelector('#scan').click()")
-        p.shot("barcode_sheet")
-        p.ev("document.querySelector('#backdrop').click()")
-        p.ev("document.querySelector('#dev-open').click()")
-        p.ev("document.querySelector('#dev-toggle').click()")
-        p.shot("developer")
-        p.ev(
-            "document.querySelector('#dev-toggle').click()"
-        )  # off again for the normal result shots
-        p.ev("document.querySelector('#backdrop').click()")
-
-        # ---- one real read for the Result sheet ----
-        p.ev("document.querySelector('#primary').click()")
-        p.shot("capture_reading")
-        ok = p.wait("!document.querySelector('#sheet-result').hidden", 180)
-        print("result sheet opened:", ok)
-        time.sleep(0.8)
-        p.shot("result_top")
-        fold = p.ev(
-            "(() => { const h = document.querySelector('#r-hero').getBoundingClientRect(), "
-            "a = document.querySelector('.sheet-actions').getBoundingClientRect(); return [Math.round(h.bottom), Math.round(a.top)]; })()"
-        )
-        print(
-            "result hero bottom / action bar top:",
-            fold,
-            "-> above the fold" if fold[0] < fold[1] else "-> BELOW THE FOLD",
-        )
-        p.ev("document.querySelector('#r-scroll').scrollTop = 560")
-        p.shot("result_scrolled")
-        p.ev("document.querySelector('#r-scroll').scrollTop = 99999")
-        p.shot("result_bottom")
-        p.ev("document.querySelector('#r-scroll').scrollTop = 0")
-        p.ev("document.querySelector('#r-more').click()")
-        p.ev("document.querySelector('#r-unv-more').click()")
-        p.ev("document.querySelector('#r-scroll').scrollTop = 420")
-        p.shot("result_expanded")
-        # developer on: the request, the prompt, the re-read button
-        p.ev("document.querySelector('#r-back').click()")
-        p.ev("document.querySelector('#dev-open').click()")
-        p.ev("document.querySelector('#dev-toggle').click()")
-        p.ev("document.querySelector('#backdrop').click()")
-        p.ev("document.querySelector('#primary').click()")
-        p.wait("!document.querySelector('#sheet-result').hidden", 180)
-        time.sleep(0.8)
-        p.ev("document.querySelector('#r-raw').open = true")
-        p.ev("document.querySelector('#r-scroll').scrollTop = 99999")
-        p.shot("result_developer")
-        p.ev("document.querySelector('#r-back').click()")
-        p.ev("localStorage.clear()")
-
-        # ---- filled library on the real index ----
-        p.go(args.base + "/")
-        p.ev("localStorage.clear()")
-        p.ev("document.querySelector('[data-tab=library]').click()")
-        p.wait("document.querySelectorAll('.tile').length > 0", 30)
-        time.sleep(1.5)
-        p.shot("library_filled")
-        p.ev("document.querySelector('#lib-scroll').scrollTop = 99999")
-        p.shot("library_allergens")
-        p.ev("document.querySelector('#lib-scroll').scrollTop = 0")
-        # a matched and a mismatched Open Food Facts cross-check, opened from the library
-        hits = json.load(urllib.request.urlopen(args.base + "/api/search?size=100&verified=true"))[
-            "hits"
-        ]
-        for status, name in (("match", "result_matched"), ("mismatch", "result_mismatch")):
-            doc = next((d for d in hits if d.get("off_match", {}).get("status") == status), None)
-            if doc:
-                p.ev(f"openDoc('{doc['id']}')")
-                p.wait("!document.querySelector('#sheet-result').hidden", 15)
-                time.sleep(1.2)
-                p.shot(name)
-                p.ev("document.querySelector('#r-back').click()")
-                time.sleep(0.4)
-        # ---- dark mode: the same screens with the dark tokens ----
-        p.scheme("dark")
-        p.ev("document.querySelector('#lib-scroll').scrollTop = 0")
-        p.shot("library_dark")
-        p.ev("document.querySelector('[data-tab=capture]').click()")
-        p.shot("capture_dark")
-        p.ev("document.querySelector('[data-tab=library]').click()")
-        p.ev("document.querySelector('.tile').click()")
-        p.wait("!document.querySelector('#sheet-result').hidden", 15)
-        time.sleep(1)
-        p.shot("result_dark")
-        p.ev("document.querySelector('#r-back').click()")
-        p.scheme("light")
-        # ---- desktop: still a phone-width column ----
-        p.size(1280, 800, mobile=False)
-        time.sleep(0.5)
-        p.shot("desktop_column")
+        empty_library_and_capture(p, args.empty_base, args.yogurt)
+        result_screens(p)
+        filled_library(p, args.base)
+        dark_and_desktop(p)
         print("console problems:", p.problems or "none")
     finally:
         p.close()

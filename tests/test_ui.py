@@ -15,7 +15,7 @@ import uvicorn
 from PIL import Image
 from websockets.sync.client import connect
 
-from app import eis, es, main, off, pipeline
+from app import eis, es, main, pipeline
 
 FIX = Path(__file__).parent / "fixtures"
 MAC_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
@@ -45,22 +45,21 @@ def server(tmp_path_factory):
     docs: dict[str, dict] = {}
     mp = pytest.MonkeyPatch()
     call = eis.Call(
-        status=200, ms=2900, method="POST", path="/_inference/chat_completion/x",
-        request={"messages": ["<image>"]}, text=(FIX / "yogurt_official.md").read_text(),
-        usage={"prompt_tokens": 905, "completion_tokens": 386}, finish_reason="stop",
+        status=200, ms=2900, method="POST", path="/_inference/document_extraction/.jina-reader",
+        request={"input": ["<image>"]}, text=(FIX / "yogurt_official.md").read_text(),
+        body={"document_extraction": [{"content": "…", "format": "markdown"}]},
     )  # fmt: skip
     mp.setattr(pipeline, "CAPTURES", tmp_path_factory.mktemp("captures"))
-    mp.setattr(eis, "ocr_chat", lambda url, prompt=None, **kw: call)
+    mp.setattr(eis, "read", lambda url: call)
     mp.setattr(eis, "warmup", lambda: 0.0)
-    mp.setattr(off, "lookup", lambda code: None)
     mp.setattr(es, "index_doc", lambda doc: docs.__setitem__(doc["id"], doc))
     mp.setattr(es, "get_doc", lambda doc_id: docs.get(doc_id))
     mp.setattr(
         es,
         "search",
-        lambda q, a, lang, ver, size, kind: {"total": len(docs), "hits": list(docs.values())},
+        lambda q, a, lang, size, kind: {"total": len(docs), "hits": list(docs.values())},
     )
-    mp.setattr(es, "aggregate", lambda q, a, lang, ver, kind: {"total": len(docs), "allergens": [], "languages": [], "verified": {}})  # fmt: skip
+    mp.setattr(es, "aggregate", lambda q, a, lang, kind: {"total": len(docs), "allergens": [], "languages": []})  # fmt: skip
     port = free_port()
     srv = uvicorn.Server(uvicorn.Config(main.app, host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=srv.run, daemon=True)
@@ -127,14 +126,14 @@ class Browser:
     def open(self, url: str) -> None:
         self.call("Page.navigate", url=url)
         assert self.wait(
-            "document.readyState === 'complete' && document.querySelector('#prompt')?.options.length > 0"
+            "document.readyState === 'complete' && document.querySelector('#primary')?.textContent === 'Take photo'"
         )
 
     def reload(self) -> None:
         self.call("Page.reload")
         time.sleep(0.3)
         assert self.wait(
-            "document.readyState === 'complete' && document.querySelector('#prompt')?.options.length > 0"
+            "document.readyState === 'complete' && document.querySelector('#primary')?.textContent === 'Take photo'"
         )
 
     def upload(self, selector: str, path: Path) -> None:
@@ -156,35 +155,6 @@ def page(server, tmp_path):
     b.close()
 
 
-def test_developer_toggle_and_prompt_choice_survive_a_reload(page):
-    assert page.ev("document.body.dataset.dev") == "0"  # off by default
-    assert page.ev("document.querySelector('#sheet-dev').hidden") is True
-
-    page.ev("document.querySelector('#dev-open').click()")
-    assert page.ev("document.querySelector('#sheet-dev').hidden") is False
-    assert (
-        page.ev("document.querySelector('#dev-prompt-wrap').hidden") is True
-    )  # selector only when on
-    page.ev("document.querySelector('#dev-toggle').click()")
-    assert page.ev("localStorage.getItem('fi.dev')") == "1"
-    assert page.ev("document.querySelector('#dev-prompt-wrap').hidden") is False
-    page.ev(
-        "(() => { const s = document.querySelector('#prompt'); s.value = 'official'; s.dispatchEvent(new Event('change')); })()"
-    )
-    assert page.ev("localStorage.getItem('fi.prompt')") == "official"
-
-    page.reload()  # the setting is remembered
-    assert page.ev("document.body.dataset.dev") == "1"
-    assert page.ev("document.querySelector('#dev-toggle').checked") is True
-    assert page.ev("document.querySelector('#prompt').value") == "official"
-
-    page.ev("document.querySelector('#dev-open').click()")
-    page.ev("document.querySelector('#dev-toggle').click()")  # and turning it off is remembered too
-    page.reload()
-    assert page.ev("document.body.dataset.dev") == "0"
-    assert page.ev("document.querySelector('#dev-toggle').checked") is False
-
-
 def test_result_sheet_opens_after_a_read_and_closes_every_way(page, tmp_path):
     photo = tmp_path / "label.jpg"
     Image.new("RGB", (400, 300), "white").save(photo)
@@ -203,7 +173,6 @@ def test_result_sheet_opens_after_a_read_and_closes_every_way(page, tmp_path):
         "the sheet did not open after the read"
     )
     assert page.ev("document.querySelector('#r-hero .num').textContent") == "27"
-    assert page.ev("document.querySelector('#r-verified').textContent") == "Verified"
     assert page.ev("document.querySelector('#r-read').textContent") == "Read in 2.9 s"
     assert page.ev("document.querySelector('#r-contains').textContent.includes('Milk')") is True
 
@@ -234,3 +203,59 @@ def test_result_sheet_opens_after_a_read_and_closes_every_way(page, tmp_path):
     )  # "Open in library" lands on the Library tab
     assert page.wait("document.querySelector('#sheet-result').hidden")
     assert page.ev("document.querySelector('#screen-library').hidden") is False
+
+
+def test_the_result_shows_the_pipeline_and_a_raw_request_and_response_button(page, tmp_path):
+    """Extract -> Ingest -> Search is on the Result; the raw API call is one button away, both halves."""
+    photo = tmp_path / "label.jpg"
+    Image.new("RGB", (400, 300), "white").save(photo)
+    page.upload("#pick", photo)
+    assert page.wait("document.querySelector('#primary').textContent === 'Read label'")
+    page.ev("document.querySelector('#primary').click()")
+    assert page.wait("!document.querySelector('#sheet-result').hidden")
+    pipe = page.ev("document.querySelector('#r-pipe').textContent")
+    assert "Extract" in pipe and "Ingest" in pipe and "saved" in pipe and "Search" in pipe
+    for gone in ("#dev-open", "#sheet-dev", "#scan", "#r-verified", "#r-xchip", "#sheet-barcode"):
+        assert page.ev(f"document.querySelector('{gone}')") is None, gone
+
+    page.ev("document.querySelector('[data-raw=json]').click()")
+    shown_json = page.ev("document.querySelector('#r-raw-body').textContent")
+    assert '"carbohydrates_g": 27' in shown_json
+    assert "nutrients_verified" not in shown_json and "off_match" not in shown_json
+    page.ev("document.querySelector('[data-raw=markdown]').click()")
+    assert "Nutrition Facts" in page.ev("document.querySelector('#r-raw-body').textContent")
+
+    assert page.ev("document.querySelector('#r-api').textContent") == "Raw request & response"
+    assert page.ev("document.querySelector('#r-api').hidden") is False
+    page.ev("document.querySelector('#r-api').click()")
+    assert page.ev("document.querySelector('#sheet-raw').hidden") is False
+    line = page.ev("document.querySelector('#raw-line').textContent")
+    assert line == "POST /_inference/document_extraction/.jina-reader"
+    assert '"input"' in page.ev("document.querySelector('#raw-req').textContent")
+    assert '"document_extraction"' in page.ev("document.querySelector('#raw-res').textContent")
+    page.ev("document.querySelector('#sheet-raw .close').click()")
+    assert page.ev("document.querySelector('#sheet-raw').hidden") is True
+
+
+def test_a_photo_with_no_panel_gets_an_explanation_not_an_empty_table(page, tmp_path, monkeypatch):
+    call = eis.Call(
+        status=200, ms=1500, method="POST", path="/_inference/document_extraction/.jina-reader", request={},
+        text="Fresh apples, Cox's Orange Pippin, 1 kg, grown in Kent.",
+    )  # fmt: skip
+    monkeypatch.setattr(eis, "read", lambda url: call)
+    photo = tmp_path / "apples.jpg"
+    Image.new("RGB", (400, 300), "white").save(photo)
+    page.upload("#pick", photo)
+    assert page.wait("document.querySelector('#primary').textContent === 'Read label'")
+    page.ev("document.querySelector('#primary').click()")
+    assert page.wait("!document.querySelector('#sheet-result').hidden")
+    shown = "(sel) => getComputedStyle(document.querySelector(sel)).display !== 'none'"
+    assert page.ev(f"({shown})('#r-nopanel')")
+    assert (
+        page.ev("document.querySelector('#r-nopanel h2').textContent") == "No nutrition panel found"
+    )
+    for sel in ("#r-hero", "#r-panel", "#r-basis"):
+        assert not page.ev(f"({shown})('{sel}')"), sel
+    assert "Fresh apples" in page.ev(
+        "document.querySelector('#r-unv').textContent"
+    )  # what we read is still shown

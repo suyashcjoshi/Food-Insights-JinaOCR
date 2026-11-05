@@ -8,7 +8,9 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 
-MAX_EDGE = 1600
+MAX_EDGE = 1600  # long edge in px: big enough to read small print, small enough to stay cheap
+JPEG_QUALITY = 90
+MIME_TYPES = {"JPEG": "image/jpeg", "PNG": "image/png", "PDF": "application/pdf"}
 
 
 def prepare(path: str | Path, max_edge: int = MAX_EDGE) -> Image.Image:
@@ -25,6 +27,6 @@ def prepare_bytes(data: bytes, max_edge: int = MAX_EDGE) -> Image.Image:
 
 def to_data_url(img: Image.Image, fmt: str = "JPEG") -> str:
     buf = io.BytesIO()
-    img.save(buf, format=fmt, quality=90) if fmt == "JPEG" else img.save(buf, format=fmt)
-    mime = {"JPEG": "image/jpeg", "PNG": "image/png", "PDF": "application/pdf"}[fmt]
-    return f"data:{mime};base64," + base64.b64encode(buf.getvalue()).decode()
+    save_args = {"quality": JPEG_QUALITY} if fmt == "JPEG" else {}
+    img.save(buf, format=fmt, **save_args)
+    return f"data:{MIME_TYPES[fmt]};base64," + base64.b64encode(buf.getvalue()).decode()

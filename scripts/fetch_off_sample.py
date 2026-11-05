@@ -52,8 +52,11 @@ NUTRIMENTS = {
     "salt_g": "salt_100g",
 }
 MIN_SEARCH_INTERVAL = 7.0  # seconds; keeps us at <= ~8 search calls/min
-BACKOFF = (10, 30, 60)
+BACKOFF = (10, 30, 60)  # seconds to wait after a failed search attempt
+PAGE_SIZES = (100, 100, 50, 25)  # heavy pages 503, so later attempts ask for lighter ones
 MAX_PAGES_PER_COUNTRY = 8
+DOWNLOAD_PAUSE = 1.0  # seconds after each image: be gentle with the image server
+MIN_NUTRIENTS = 4  # a product needs at least this many scored nutrients
 
 
 class Throttle:
@@ -74,13 +77,12 @@ def search_page(client: httpx.Client, throttle: Throttle, country: str, page: in
         return json.loads(cache.read_text()).get("products", [])
     params = {
         "fields": FIELDS,
-        "page_size": 100,
         "page": page,
         "sort_by": "unique_scans_n",
         "countries_tags_en": country,
     }
-    for attempt in range(len(BACKOFF) + 1):
-        params["page_size"] = (100, 100, 50, 25)[attempt]  # heavy pages 503; try lighter ones
+    for attempt, page_size in enumerate(PAGE_SIZES):
+        params["page_size"] = page_size
         throttle.wait()
         stats["search_calls"] += 1
         try:
@@ -138,7 +140,7 @@ def usable(p: dict, lang: str) -> dict | None:
         return None
     nutrients = {k: number(nut.get(src)) for k, src in NUTRIMENTS.items()}
     nutrients = {k: v for k, v in nutrients.items() if v is not None}
-    if len(nutrients) < 4 or not nutrients.get("energy_kcal"):
+    if len(nutrients) < MIN_NUTRIENTS or not nutrients.get("energy_kcal"):
         return None
     return {
         "code": str(p["code"]),
@@ -171,7 +173,7 @@ def download(client: httpx.Client, url: str, dest: Path) -> str | None:
             continue
         if r.status_code == 200 and valid_image(r.content):
             dest.write_bytes(r.content)
-            time.sleep(1.0)
+            time.sleep(DOWNLOAD_PAUSE)
             return candidate
     return None
 
@@ -188,6 +190,94 @@ def manifest_entry(c: dict, country: str, used_url: str) -> dict:
         "panel": {"per": "100g", "serving_text": None, "nutrients": c["nutrients"]},
         "secondary": {"scored": False},
     }
+
+
+def collect_country(
+    client: httpx.Client,
+    throttle: Throttle,
+    country: str,
+    default_lang: str,
+    *,
+    quota: int,
+    target: int,
+    entries: list[dict],
+    seen: set[str],
+    stats: dict,
+) -> int:
+    """Download up to `quota` usable products of one country into `entries`; returns how many."""
+    got = 0
+
+    def enough() -> bool:
+        return got >= quota or len(entries) >= target
+
+    for page in range(1, MAX_PAGES_PER_COUNTRY + 1):
+        if enough():
+            break
+        products = search_page(client, throttle, country, page, stats)
+        if products is None:  # OFF unavailable: skip, never abort
+            print(f"  {country} page {page}: unavailable, skipping")
+            continue
+        if not products:
+            break
+        for p in products:
+            c = usable(p, default_lang)
+            if not c or c["code"] in seen:
+                continue
+            if enough():
+                break
+            used = download(client, c["image_url"], OFF / f"{c['code']}.jpg")
+            if used is None:
+                stats["download_failures"] += 1
+                continue
+            stats["no_full_size"] += used != full_size(c["image_url"])
+            seen.add(c["code"])
+            entries.append(manifest_entry(c, country, used))
+            got += 1
+    return got
+
+
+def write_manifest(entries: list[dict]) -> None:
+    (OFF / "manifest.jsonl").write_text(
+        "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries)
+    )
+
+
+def write_attribution(entries: list[dict]) -> None:
+    lines = [
+        "# Attribution",
+        "",
+        "Product data from [Open Food Facts](https://world.openfoodfacts.org), available under the",
+        "[Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/1-0/).",
+        "Product images are licensed [CC BY-SA](https://creativecommons.org/licenses/by-sa/3.0/)",
+        "by their Open Food Facts contributors. Each image links to its product page below.",
+        "",
+        "| Barcode | Product | Country | Page |",
+        "|---|---|---|---|",
+    ]
+    for e in entries:
+        name = (e["name"] or "(unnamed)").replace("|", "/")
+        lines.append(f"| {e['barcode']} | {name} | {e['country']} | [page]({e['product_url']}) |")
+    (OFF / "ATTRIBUTION.md").write_text("\n".join(lines) + "\n")
+
+
+def write_report(
+    entries: list[dict], per_country: dict[str, int], stats: dict, target: int
+) -> dict:
+    """The run's report (JSON and Markdown); returns the language counts for the summary line."""
+    langs: dict[str, int] = {}
+    for e in entries:
+        langs[e["lang"]] = langs.get(e["lang"], 0) + 1
+    summary = {"images": len(entries), "per_country": per_country, "languages": langs, **stats}
+    (REPORTS / "fetch_off_sample.json").write_text(json.dumps(summary, indent=2))
+    (REPORTS / "fetch_off_sample.md").write_text(
+        "# OFF sample fetch\n\n"
+        f"- Images: {len(entries)} (target {target})\n"
+        f"- Per country: {per_country}\n- Languages: {langs}\n"
+        f"- Search calls: {stats['search_calls']} ({stats['search_failures']} failed or 503)\n"
+        f"- Downloads that fell back to the 400 px image: {stats['no_full_size']}\n"
+        f"- Download failures: {stats['download_failures']}\n"
+    )
+    return langs
 
 
 def main() -> int:
@@ -210,66 +300,15 @@ def main() -> int:
     with httpx.Client(headers={"User-Agent": ua}, timeout=30, follow_redirects=True) as client:
         throttle = Throttle(MIN_SEARCH_INTERVAL)
         for country, default_lang in COUNTRIES:
-            got = 0
-            for page in range(1, MAX_PAGES_PER_COUNTRY + 1):
-                if got >= quota or len(entries) >= args.target:
-                    break
-                products = search_page(client, throttle, country, page, stats)
-                if products is None:  # OFF unavailable: skip, never abort
-                    print(f"  {country} page {page}: unavailable, skipping")
-                    continue
-                if not products:
-                    break
-                for p in products:
-                    c = usable(p, default_lang)
-                    if not c or c["code"] in seen:
-                        continue
-                    if got >= quota or len(entries) >= args.target:
-                        break
-                    dest = OFF / f"{c['code']}.jpg"
-                    used = download(client, c["image_url"], dest)
-                    if used is None:
-                        stats["download_failures"] += 1
-                        continue
-                    stats["no_full_size"] += used != full_size(c["image_url"])
-                    seen.add(c["code"])
-                    entries.append(manifest_entry(c, country, used))
-                    got += 1
-            per_country[country] = got
-            print(f"{country}: {got}/{quota}")
+            per_country[country] = collect_country(
+                client, throttle, country, default_lang,
+                quota=quota, target=args.target, entries=entries, seen=seen, stats=stats,
+            )  # fmt: skip
+            print(f"{country}: {per_country[country]}/{quota}")
 
-    (OFF / "manifest.jsonl").write_text(
-        "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries)
-    )
-    lines = [
-        "# Attribution",
-        "",
-        "Product data from [Open Food Facts](https://world.openfoodfacts.org), available under the",
-        "[Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/1-0/).",
-        "Product images are licensed [CC BY-SA](https://creativecommons.org/licenses/by-sa/3.0/)",
-        "by their Open Food Facts contributors. Each image links to its product page below.",
-        "",
-        "| Barcode | Product | Country | Page |",
-        "|---|---|---|---|",
-    ]
-    for e in entries:
-        name = (e["name"] or "(unnamed)").replace("|", "/")
-        lines.append(f"| {e['barcode']} | {name} | {e['country']} | [page]({e['product_url']}) |")
-    (OFF / "ATTRIBUTION.md").write_text("\n".join(lines) + "\n")
-
-    langs: dict[str, int] = {}
-    for e in entries:
-        langs[e["lang"]] = langs.get(e["lang"], 0) + 1
-    summary = {"images": len(entries), "per_country": per_country, "languages": langs, **stats}
-    (REPORTS / "fetch_off_sample.json").write_text(json.dumps(summary, indent=2))
-    (REPORTS / "fetch_off_sample.md").write_text(
-        "# OFF sample fetch\n\n"
-        f"- Images: {len(entries)} (target {args.target})\n"
-        f"- Per country: {per_country}\n- Languages: {langs}\n"
-        f"- Search calls: {stats['search_calls']} ({stats['search_failures']} failed or 503)\n"
-        f"- Downloads that fell back to the 400 px image: {stats['no_full_size']}\n"
-        f"- Download failures: {stats['download_failures']}\n"
-    )
+    write_manifest(entries)
+    write_attribution(entries)
+    langs = write_report(entries, per_country, stats, args.target)
     print(f"{len(entries)} images -> data/off/ (languages {langs}, {stats})")
     return 0
 
