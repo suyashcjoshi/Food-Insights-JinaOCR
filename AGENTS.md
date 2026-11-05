@@ -72,5 +72,4 @@ already exist, nothing to PUT for chat_completion.
 - Every script prints a one-line summary and writes a report file under `_notes/reports/`
   (git-ignored), so a run never dirties the tree.
 - Keep a dated log of decisions in `_notes/docs/decisions.md` (local, git-ignored).
-- Credit upstream: `elastic/demos/jina-ocr-v1` and the colleague's adaptation in the README;
-  MIT here.
+- Code ported from other projects keeps a one-line attribution comment at the top of the file; MIT here.

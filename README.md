@@ -22,7 +22,7 @@ and the unverified text. Name, language and barcode can be edited there.
 |---|---|---|
 | <img src="docs/screenshots/light/capture.png" width="230" alt="The Capture screen: a viewfinder frame and a Take photo button"> | <img src="docs/screenshots/light/result.png" width="230" alt="The Result sheet: 27 g carbohydrate, the nutrient rows and a green Verified mark"> | <img src="docs/screenshots/light/library.png" width="230" alt="The Library: a three-column grid of label photos"> |
 
-The Library photos are Open Food Facts samples (see Credits).
+The Library photos are Open Food Facts samples (see References).
 
 ## What you can trust
 
