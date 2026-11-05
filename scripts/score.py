@@ -1,4 +1,4 @@
-"""Score OCR + parser against the Open Food Facts sample (BRIEF 7.6).
+"""Score OCR + parser against the Open Food Facts sample.
 
     uv run python scripts/score.py              # OCR every image (cached), then score
     uv run python scripts/score.py --rescore    # score from cached OCR only, no API calls
@@ -11,9 +11,9 @@ or missing (not parsed). Scores are against OFF, which can disagree with the pac
 Every wrong or missing field is classified by likely cause (see `classify`), and
 `model_read_accuracy` says whether the OFF value appears anywhere in the raw OCR text.
 `--freeze-baseline OLD_SCORE.json` re-annotates the rows of a score.json made by an older parser
-and stores them in reports/baseline/score_before.json; every later run prints a before/after table
+and stores them in _notes/reports/baseline/score_before.json; every later run prints a before/after table
 against it (same classifier on both sides, so the categories are comparable).
-Writes reports/score_<prompt>.md/.json (and score.md/.json for the default prompt); raw OCR is cached in data/off/ocr_cache[_<prompt>]/.
+Writes _notes/reports/score_<prompt>.md/.json (and score.md/.json for the default prompt); raw OCR is cached in data/off/ocr_cache[_<prompt>]/.
 """
 
 from __future__ import annotations
@@ -29,7 +29,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from triage_model_misses import load_confirmed, read_after_triage
 
 from app import eis
 from app.images import prepare, to_data_url
@@ -37,7 +36,7 @@ from app.ocr import is_looped, strip_regions
 from app.parse import LABEL_RE, fold, normalize, parse
 
 OFF = ROOT / "data" / "off"
-REPORTS = ROOT / "reports"
+REPORTS = ROOT / "_notes" / "reports"  # git-ignored: results are local notes, not part of the repo
 TOL = {"energy_kcal": 5.0}
 DEFAULT_TOL = 0.5
 WORKERS = 4
@@ -405,9 +404,6 @@ def main() -> int:
     summary["model_read_accuracy"] = after["model_read_accuracy"]
     summary["categories"] = after["categories"]
     summary["parse_suspect_images"] = sum(r["parse_suspect"] for r in ok_rows)
-    # confirmed_cause is a human's call on the official run's photos, so only that run uses it
-    confirmed = load_confirmed() if args.prompt == "official" else {}
-    summary["read_after_triage"] = read_after_triage(rows, cache_dir(args.prompt), confirmed)
     summary["chart"] = [
         {
             "language": lang,
@@ -446,7 +442,7 @@ def main() -> int:
             by_key.setdefault(key, {"correct": 0, "wrong": 0, "missing": 0})[f["outcome"]] += 1
     summary["per_nutrient"] = by_key
 
-    REPORTS.mkdir(exist_ok=True)
+    REPORTS.mkdir(parents=True, exist_ok=True)
     names = report_names(args.prompt)
     payload = json.dumps({"summary": summary, "rows": rows}, indent=2, ensure_ascii=False)
     for n in names:
@@ -487,7 +483,6 @@ def main() -> int:
     if summary["cost_est_total"] is not None:
         md.append(f"- cost_est for the whole run: ${summary['cost_est_total']:.5f}")
     m = summary["misses"]
-    rt = summary["read_after_triage"]
     md += [
         (
             f"- Of {m['total']} wrong or missing fields, {m['value_in_ocr_text']} have the OFF value "
@@ -501,13 +496,6 @@ def main() -> int:
             f"{ratio(summary['model_read_accuracy'])}"
         ),
         f"- Panels flagged parse_suspect: {summary['parse_suspect_images']}",
-        (
-            f"- Read accuracy after triage: {ratio(rt['read_after'])} (before triage "
-            f"{ratio(rt['read_before'])}). {rt['reclassified_as_read']} of {rt['model_misses']} "
-            f"`model` misses have a cause where the model read the pack correctly "
-            f"(basis_mismatch, rounding_lt05, revision); {rt['confirmed']} causes confirmed by hand, "
-            f"{rt['suggested']} suggested by the heuristic"
-        ),
         f"- Prompt `{args.prompt}`: {summary['table_outputs']} of {len(ok_rows)} outputs contain `<table>`",
     ]
     if before:
@@ -517,7 +505,7 @@ def main() -> int:
             "## Before / after the parser changes",
             "",
             (
-                "Before = the parser as of the first full score (frozen in `reports/baseline/`); same 50 images, "
+                "Before = the parser as of the first full score (frozen in `baseline/` next to this report); same 50 images, "
                 "same cached OCR text, same classifier on both sides."
             ),
             "",
@@ -601,7 +589,7 @@ def main() -> int:
 
     print(
         f"{len(ok_rows)} images, carbs {overall['carbs_accuracy']}, fields {overall['field_accuracy']} "
-        f"({overall['correct']}/{overall['fields']}), looped {summary['looped']}, errors {errors} -> reports/{names[0]}.md"
+        f"({overall['correct']}/{overall['fields']}), looped {summary['looped']}, errors {errors} -> {REPORTS.relative_to(ROOT)}/{names[0]}.md"
     )
     return 0
 

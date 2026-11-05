@@ -1,0 +1,8 @@
+flowchart LR
+    B["Browser<br/>web/"] -->|"photo + optional barcode"| A["FastAPI<br/>app/main.py"]
+    A --> P["Capture pipeline<br/>app/pipeline.py<br/><br/>1 rotate and shrink the photo<br/>2 read the label<br/>3 find the numbers (parse.py)<br/>4 check the barcode<br/>5 save"]
+    P -.->|"step 2"| M["jina-ocr-v1<br/>Elastic Inference Service"]
+    P -.->|"step 4"| O["Open Food Facts"]
+    P -->|"step 5"| E[("Elasticsearch Serverless<br/>index: food_labels")]
+    B -.->|"search, filters, counts"| A
+    A -.->|"search + aggregations"| E

@@ -1,4 +1,4 @@
-"""Nutrient parser for jina-ocr-v1 Markdown (BRIEF 7.5).
+"""Nutrient parser for jina-ocr-v1 Markdown.
 
 Only the Nutrition Facts panel becomes fields. Ingredients, allergens and claims are returned as
 `unverified_text` and never parsed (the model invents text where the frame cuts the label off).
@@ -608,6 +608,33 @@ def _align(rows: list[_Row], res: ParseResult) -> None:
     res.nutrients = new
 
 
+def _ingredient_like_tail(md: str) -> str:
+    """Ingredient or allergen text after the panel, for when the model garbled its headings.
+
+    The usual rule (`UNVERIFIED_START`) looks for an INGREDIENTS / CONTAINS heading. A model that
+    reads a small photo can return `IMPORTANT:` for INGREDIENTS and `DATING` for CONTAINS, and then
+    nothing matches. So: take the text after the panel (after the last `</table>`, or after the last
+    row that has a nutrient label and a number) and keep only the paragraphs that look like a list:
+    at least three commas and a recognised allergen word. Footnotes, addresses and reference-intake
+    lines do not qualify, so a panel-only photo still has no unverified text.
+    """
+    from app.allergens import find_allergens  # allergens imports this module: import late
+
+    end = md.lower().rfind("</table>")
+    if end >= 0:
+        tail = md[end + len("</table>") :]
+    else:
+        lines = md.splitlines()
+        last = -1
+        for i, ln in enumerate(lines):
+            norm = fold(" ".join(normalize(ln)))
+            if LABEL_RE.search(norm) and TOKEN_RE.search(norm):
+                last = i
+        tail = "\n".join(lines[last + 1 :]) if last >= 0 else ""
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", tail) if p.strip()]
+    return "\n\n".join(p for p in paragraphs if p.count(",") >= 3 and find_allergens(p))
+
+
 def _check_consistency(res: ParseResult) -> None:
     n = res.nutrients
     kcal, carbs, protein, fat = (
@@ -674,15 +701,23 @@ def parse(md: str, *, _force_column: int | None = None) -> ParseResult:
         if kind == "kcal":
             _energy(ln, res)
         elif kind == "added":
+            rest = ln
             for rx in ADDED_SUGARS_RES:
-                if (m := rx.search(ln)) and "added_sugars_g" not in res.nutrients:
-                    res.nutrients["added_sugars_g"] = _convert(
-                        _to_float(m.group("num")), m.group("unit") or "g", "added_sugars_g"
-                    )
+                if m := rx.search(ln):
+                    if "added_sugars_g" not in res.nutrients:
+                        res.nutrients["added_sugars_g"] = _convert(
+                            _to_float(m.group("num")), m.group("unit") or "g", "added_sugars_g"
+                        )
+                    # a merged table row can carry other nutrients on the same line (`Cholesterol
+                    # <5mg 0% Includes 1g Added Sugars 38%`): scan what is left once the phrase is out
+                    rest = f"{ln[: m.start()]} {ln[m.end() :]}"
                     break
+            _scan_line(rest, res)
         else:
             _scan_line(ln, res)
 
+    if not res.unverified_text and res.panel_found:
+        res.unverified_text = _ingredient_like_tail(md or "")
     if not res.unverified_text and not res.panel_found:
         res.unverified_text = (md or "").strip()  # no panel in frame: all of it is unverified
 

@@ -7,7 +7,7 @@ Every image in data/off/manifest.jsonl goes through the SAME code as `/api/captu
 (`app.pipeline.capture`, then `app.es.index_doc`) with `source: off`, the OFF barcode, the OFF
 language tag and product name, and the OFF product page as `source_url`. The document id is
 `off-<barcode>`, so a re-run overwrites instead of duplicating; documents already in the index are
-skipped (no EIS call) unless --force. Writes reports/seed_off.md.
+skipped (no EIS call) unless --force. Writes _notes/reports/seed_off.md.
 
 Costs one EIS call per image (about $0.002) and one OFF product lookup (cached to disk).
 Data: Open Food Facts contributors, ODbL; images CC BY-SA (see data/off/ATTRIBUTION.md).
@@ -29,7 +29,7 @@ sys.path.insert(0, str(ROOT))
 from app import eis, es, off, pipeline
 
 OFF = ROOT / "data" / "off"
-REPORTS = ROOT / "reports"
+REPORTS = ROOT / "_notes" / "reports"  # git-ignored local notes
 
 
 def seed_one(entry: dict, prompt: str, force: bool) -> dict:
@@ -163,10 +163,11 @@ def main() -> int:
             "",
             *[f"- {r['barcode']}: {r['outcome']} {r.get('detail', '')}" for r in fails],
         ]
+    REPORTS.mkdir(parents=True, exist_ok=True)
     (REPORTS / "seed_off.md").write_text("\n".join(md) + "\n")
     print(
         f"seeded {by.get('indexed', 0)}/{len(entries)} (skipped {by.get('skipped', 0)}, failed {len(fails)}) "
-        f"into {es.index_name()} in {secs:.0f}s, ${cost:.4f} -> reports/seed_off.md"
+        f"into {es.index_name()} in {secs:.0f}s, ${cost:.4f} -> _notes/reports/seed_off.md"
     )
     return 1 if fails else 0
 

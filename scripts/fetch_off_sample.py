@@ -1,9 +1,9 @@
-"""Fetch an Open Food Facts sample (BRIEF 7.4).
+"""Fetch an Open Food Facts sample.
 
     uv run python scripts/fetch_off_sample.py [--target 50]
 
 Writes data/off/<code>.jpg, data/off/manifest.jsonl (panel/secondary schema, per 100 g),
-data/off/ATTRIBUTION.md and reports/fetch_off_sample.md. Search pages are cached in
+data/off/ATTRIBUTION.md and _notes/reports/fetch_off_sample.md. Search pages are cached in
 data/off/cache/, search calls are throttled below 10/min, 503 never stops the run.
 Data: ODbL. Images: CC BY-SA. Attribute per product.
 """
@@ -26,7 +26,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parent.parent
 OFF = ROOT / "data" / "off"
 CACHE = OFF / "cache"
-REPORTS = ROOT / "reports"
+REPORTS = ROOT / "_notes" / "reports"  # git-ignored local notes
 SEARCH = "https://world.openfoodfacts.org/api/v2/search"
 # Search does not return image_nutrition_url, and selected_images only has the front pack.
 # `images.nutrition_<lang>.rev` is enough to build the nutrition image URL.
@@ -200,7 +200,7 @@ def main() -> int:
         sys.exit("OFF_USER_AGENT must be set in .env")
 
     CACHE.mkdir(parents=True, exist_ok=True)
-    REPORTS.mkdir(exist_ok=True)
+    REPORTS.mkdir(parents=True, exist_ok=True)
     quota = math.ceil(args.target / len(COUNTRIES))
     stats = {"search_calls": 0, "search_failures": 0, "download_failures": 0, "no_full_size": 0}
     entries: list[dict] = []

@@ -1,4 +1,4 @@
-"""Smoke test on real photos (BRIEF 7.3).
+"""Smoke test on real photos.
 
     uv run python scripts/smoke_test.py                       # data/kitchen
     uv run python scripts/smoke_test.py --dir data/scratch    # exploratory, no pass/fail
@@ -25,7 +25,7 @@ from app.images import prepare, to_data_url
 from app.ocr import is_looped, strip_regions
 from app.parse import parse
 
-REPORTS = ROOT / "reports"
+REPORTS = ROOT / "_notes" / "reports"  # git-ignored local notes
 EXTS = {".jpg", ".jpeg", ".png", ".webp", ".avif"}
 EDGE_CASES = {"occluded", "sideways", "two_products"}
 CARB_TOL = 0.5
@@ -123,7 +123,7 @@ def main() -> int:
         "carbs_correct": ok,
         "verdict": verdict,
     }
-    REPORTS.mkdir(exist_ok=True)
+    REPORTS.mkdir(parents=True, exist_ok=True)
     tag = "smoke_test" if folder.name == "kitchen" else f"smoke_test_{folder.name}"
     (REPORTS / f"{tag}.json").write_text(
         json.dumps({"summary": summary, "rows": rows}, indent=2, ensure_ascii=False)
@@ -152,7 +152,7 @@ def main() -> int:
         )
     (REPORTS / f"{tag}.md").write_text("\n".join(md) + "\n")
     print(
-        f"{len(rows)} images, carbs correct {ok}/{len(bucket)}, verdict {verdict or 'n/a'} -> reports/{tag}.md"
+        f"{len(rows)} images, carbs correct {ok}/{len(bucket)}, verdict {verdict or 'n/a'} -> _notes/reports/{tag}.md"
     )
     return 0
 

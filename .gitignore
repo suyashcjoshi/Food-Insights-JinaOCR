@@ -11,3 +11,6 @@ __pycache__/
 .ruff_cache/
 reports/*scratch*
 data/captures/
+
+# local notes, results and working scripts; never committed
+_notes/

@@ -1,4 +1,4 @@
-"""Phase 2: allergens, OFF cross-check, the ES mapping, and the API with EIS / ES / OFF faked."""
+"""The app: allergens, OFF cross-check, the ES mapping, and the API with EIS / ES / OFF faked."""
 
 import io
 from pathlib import Path
@@ -290,7 +290,9 @@ def test_capture_rejects_unknown_prompt_and_non_images(api):
 
 
 def test_the_default_prompt_is_the_table_prompt():
-    assert eis.DEFAULT_PROMPT == "table"  # decided on the model-side rows, see docs/decisions.md
+    assert (
+        eis.DEFAULT_PROMPT == "table"
+    )  # decided on the model-side rows (read accuracy, misses, loops)
     assert "HTML tables" in eis.PROMPTS[eis.DEFAULT_PROMPT]
 
 

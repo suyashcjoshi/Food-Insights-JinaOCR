@@ -1,4 +1,4 @@
-"""Screenshots of every UI state at 390x844 (a phone), saved to reports/ui/.
+"""Screenshots of every UI state at 390x844 (a phone), saved to data/scratch/ui/ (git-ignored).
 
     uv run python scripts/ui_screenshots.py --base http://127.0.0.1:8000 --empty-base http://127.0.0.1:8001
 
@@ -27,7 +27,7 @@ from websockets.sync.client import connect
 
 warnings.filterwarnings("ignore")
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "reports" / "ui"
+OUT = ROOT / "data" / "scratch" / "ui"  # docs/screenshots/ holds the four that ship in the README
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 W, H = 390, 844
 
@@ -113,7 +113,7 @@ class Page:
         time.sleep(0.5)  # let the sheet animation finish
         data = self.call("Page.captureScreenshot", format="png")["data"]
         (OUT / f"{name}.png").write_bytes(base64.b64decode(data))
-        print("saved", f"reports/ui/{name}.png")
+        print("saved", f"data/scratch/ui/{name}.png")
 
     def upload(self, selector: str, path: str) -> None:
         root = self.call("DOM.getDocument")["root"]["nodeId"]

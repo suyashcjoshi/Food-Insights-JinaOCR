@@ -11,28 +11,18 @@ Service), and **Elasticsearch Serverless** to store and search the results. One 
 
 ## How it works
 
-```mermaid
-flowchart LR
-    B["Browser<br/>web/"] -->|"photo + optional barcode"| A["FastAPI<br/>app/main.py"]
-    subgraph P["Capture pipeline (app/pipeline.py)"]
-        direction TB
-        S1["Step 1: rotate and shrink the photo"] --> S2["Step 2: read the label"]
-        S2 --> S3["Step 3: find the numbers<br/>app/parse.py"]
-        S3 --> S4["Step 4: check the barcode"]
-        S4 --> S5["Step 5: save"]
-    end
-    A --> S1
-    S2 -.-> M["jina-ocr-v1<br/>Elastic Inference Service"]
-    S4 -.-> O["Open Food Facts"]
-    S5 --> E[("Elasticsearch Serverless<br/>index: food_labels")]
-    B -->|"search, filters, counts"| A
-    A -->|"search + aggregations"| E
-```
+![How a capture flows through the app: browser, FastAPI, the capture pipeline, jina-ocr-v1 on the Elastic Inference Service, Open Food Facts and Elasticsearch Serverless](docs/architecture.svg)
 
 It is built for a phone (and shows as a phone-width column on a laptop). Two tabs: **Capture** (take or
 pick a photo) and **Library** (search what you have read, filter by allergen, see counts). After a
 read, the **Result** opens as a sheet: the carbohydrate number next to the photo, the other numbers,
 and the unverified text. Name, language and barcode can be edited there.
+
+| Capture | Result | Library |
+|---|---|---|
+| <img src="docs/screenshots/light/capture.png" width="230" alt="The Capture screen: a viewfinder frame and a Take photo button"> | <img src="docs/screenshots/light/result.png" width="230" alt="The Result sheet: 27 g carbohydrate, the nutrient rows and a green Verified mark"> | <img src="docs/screenshots/light/library.png" width="230" alt="The Library: a three-column grid of label photos"> |
+
+The Library photos are Open Food Facts samples (see Credits).
 
 ## What you can trust
 
@@ -47,9 +37,9 @@ and the unverified text. Name, language and barcode can be edited there.
 - **Barcode check**: if there is a barcode, the carbohydrate figure is compared with Open Food
   Facts. It says match, mismatch, not found, or not comparable (the panel is per serving).
 
-How good is the reading? On 50 hard Open Food Facts photos in 7 languages, about 6 in 10 values
-match Open Food Facts (carbs: 58%), and the model puts the right number in its text about 74% of the
-time. Details, failures and decisions are in [`reports/PHASE1.md`](reports/PHASE1.md).
+## How well does it read?
+
+We tried it on 50 Open Food Facts photos in 7 languages: 63% of the values and 58% of the carbohydrate figures match the database. The model puts the right number in its text about 74% of the time. The remaining gap is parser work and the database disagreeing with the pack. Well-framed photos of your own read cleanly.
 
 ## Run it
 
@@ -69,8 +59,8 @@ The first read after a quiet period can take a few minutes while the model wakes
 |---|---|
 | `app/` | the backend: `eis.py` (model calls), `parse.py` (numbers), `allergens.py`, `off.py`, `es.py`, `pipeline.py`, `main.py` |
 | `web/` | the page: `index.html`, `app.js`, `style.css` (no build step) |
-| `scripts/` | benchmark and tools: `score.py`, `compare_prompts.py`, `triage_model_misses.py`, `seed_off.py`, `off_live.py` |
-| `reports/` | results (start with `PHASE1.md`); `docs/decisions.md` keeps every decision |
+| `scripts/` | tools: `score.py` (benchmark against Open Food Facts), `seed_off.py`, `fetch_off_sample.py`, `smoke_test.py` |
+| `docs/` | `architecture.svg` and the screenshots above |
 
 ## Credits
 
@@ -78,7 +68,7 @@ The first read after a quiet period can take a few minutes while the model wakes
 - A colleague's adaptation of it (internal demo): the pooled client, retry, streaming parser,
   warm-up, loop detector and region-token clean-up in `app/eis.py` and `app/ocr.py` are ported in
   reduced form, with permission.
-- Product data and photos: [Open Food Facts](https://world.openfoodfacts.org) contributors.
+- Product data and photos: [Open Food Facts](https://world.openfoodfacts.org) contributors (data ODbL, photos CC BY-SA). The Library screenshot shows their photos.
 
 ## References
 
