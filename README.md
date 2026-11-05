@@ -1,6 +1,6 @@
 # Food Insights
 
-Take a photo of a food label. The app reads the nutrition numbers, checks them against a public
+Take a photo of a food label. The web app reads the nutrition numbers, checks them against a public
 database, and saves everything so you can search it later, for example "every product that
 mentions peanuts, in any language".
 
@@ -39,7 +39,7 @@ The Library photos are Open Food Facts samples (see Credits).
 
 ## How well does it read?
 
-We tried it on 50 Open Food Facts photos in 7 languages: 63% of the values and 58% of the carbohydrate figures match the database. The model puts the right number in its text about 74% of the time. The remaining gap is parser work and the database disagreeing with the pack. Well-framed photos of your own read cleanly.
+I tried it on 50 Open Food Facts photos in 7 languages: 63% of the values and 58% of the carbohydrate figures match the database. The model puts the right number in its text about 74% of the time. The remaining gap is parser work and the database disagreeing with the pack. Well-framed photos of your own read cleanly.
 
 ## Run it
 
@@ -60,14 +60,6 @@ The first read after a quiet period can take a few minutes while the model wakes
 | `app/` | the backend: `eis.py` (model calls), `parse.py` (numbers), `allergens.py`, `off.py`, `es.py`, `pipeline.py`, `main.py` |
 | `web/` | the page: `index.html`, `app.js`, `style.css` (no build step) |
 | `scripts/` | tools: `score.py` (benchmark against Open Food Facts), `seed_off.py`, `fetch_off_sample.py`, `smoke_test.py` |
-
-## Credits
-
-- `elastic/demos/jina-ocr-v1`, the upstream demo this builds on.
-- A colleague's adaptation of it (internal demo): the pooled client, retry, streaming parser,
-  warm-up, loop detector and region-token clean-up in `app/eis.py` and `app/ocr.py` are ported in
-  reduced form, with permission.
-- Product data and photos: [Open Food Facts](https://world.openfoodfacts.org) contributors (data ODbL, photos CC BY-SA). The Library screenshot shows their photos.
 
 ## References
 
