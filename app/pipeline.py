@@ -13,6 +13,7 @@ from pathlib import Path
 from app import eis
 from app.allergens import find_allergens
 from app.images import JPEG_QUALITY, prepare_bytes, to_data_url
+from app.naming import guess_product_name
 from app.ocr import is_looped, strip_regions
 from app.parse import normalize, parse
 
@@ -56,6 +57,9 @@ def build_doc(
     product_name: str | None = None,
     source: str = "demo",
     source_url: str | None = None,
+    front_image_path: str | None = None,
+    name_source: str | None = None,
+    front_ms: int | None = None,
 ) -> tuple[dict, dict]:
     """Document for the index and a small dict of parse extras (looped, loop ratio)."""
     text = strip_regions(markdown)
@@ -75,6 +79,8 @@ def build_doc(
         "image_path": image_path,
         "source_url": source_url,
         "product_name": product_name,
+        "name_source": name_source,
+        "front_image_path": front_image_path,
         "language": language,
         "nutrients": nutrients,
         "parse_flags": res.flags + (["looped"] if looped else []),
@@ -82,14 +88,27 @@ def build_doc(
         "allergen_mentions": find_allergens(res.unverified_text),
         "raw_markdown": markdown,
         "plain_text": plain_text(text),
-        "telemetry": _telemetry(call),
+        "telemetry": {**_telemetry(call), **({"front_ocr_ms": front_ms} if front_ms else {})},
     }
     return {k: v for k, v in doc.items() if v is not None}, {"looped": looped, "loop_ratio": ratio}
+
+
+def _read_front(front_bytes: bytes, doc_id: str) -> tuple[str | None, str, int]:
+    """Read the front of the pack: (name guess, saved image path, wall ms). A failed read of the front
+    never fails the capture: the numbers are on the back, and the name can be typed."""
+    img = prepare_bytes(front_bytes)
+    CAPTURES.mkdir(parents=True, exist_ok=True)
+    img.save(CAPTURES / f"{doc_id}_front.jpg", format="JPEG", quality=JPEG_QUALITY)
+    path = f"captures/{doc_id}_front.jpg"
+    call = eis.read(to_data_url(img))
+    name = guess_product_name(call.text) if call.ok else None
+    return name, path, call.ms
 
 
 def capture(
     image_bytes: bytes,
     *,
+    front_bytes: bytes | None = None,
     language: str | None = None,
     product_name: str | None = None,
     source: str = "demo",
@@ -106,15 +125,22 @@ def capture(
         raise OcrError(call)
     CAPTURES.mkdir(parents=True, exist_ok=True)
     img.save(CAPTURES / f"{doc_id}.jpg", format="JPEG", quality=JPEG_QUALITY)
+    front_name, front_path, front_ms = (None, None, None)
+    if front_bytes:
+        front_name, front_path, front_ms = _read_front(front_bytes, doc_id)
+    name = product_name or front_name
     doc, extras = build_doc(
         call.text,
         doc_id=doc_id,
         image_path=f"captures/{doc_id}.jpg",
         call=call,
         language=language,
-        product_name=product_name,
+        product_name=name,
         source=source,
         source_url=source_url,
+        front_image_path=front_path,
+        name_source=("typed" if product_name else "front") if name else None,
+        front_ms=front_ms,
     )
     return {
         "doc": doc,

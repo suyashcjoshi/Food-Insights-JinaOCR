@@ -1,58 +1,77 @@
 # Food Insights
 
-Take a photo of a food label. The web app reads the nutrition numbers, checks them against a public
-database, and saves everything so you can search it later, for example "every product that
-mentions peanuts, in any language".
+Photograph a food label and the app reads the nutrition numbers, adds them up against your own daily
+limits, and saves everything so you can search it later, for example "every product that mentions
+peanuts, in any language".
 
 It is a three-step pipeline, **Extract → Ingest → Search**, all inside Elastic:
 
 1. **Extract**: one call to the Elastic Inference Service (EIS) `document_extraction` task
-   (`POST _inference/document_extraction/.jina-reader`) turns the photo into Markdown. Jina's OCR
+   (`POST _inference/document_extraction/.jina-reader`) turns a photo into Markdown. Jina's OCR
    model does the reading. This task is in preview on Elasticsearch Serverless.
-2. **Ingest**: the app parses the numbers and saves one document per photo in an Elasticsearch index
-   (`food_labels`). Extraction does not store anything by itself; saving is a separate `index` call.
-3. **Search**: the Library searches and counts what you have read.
+2. **Ingest**: the app parses the numbers and saves one document per label in an Elasticsearch index
+   (`food_labels`), and one entry per thing you eat in a second small index (`food_log`). Extraction
+   does not store anything by itself; saving is a separate `index` call.
+3. **Search**: the Library searches and counts the labels, and Today adds up your day with one aggregation.
 
 One key, one bill.
 
-**It reads the label. It never gives advice**: no doses, no "what to eat".
+**It reads the label and adds up what you ate. It never gives advice**: no doses, no "what to eat".
+Your limits are your own, and the app only says "over" or "under".
 
 ## How it works
 
 ```
   BROWSER (web/)               YOUR APP (FastAPI)                 CLOUD
- ┌──────────────┐  photo   ┌──────────────────────────┐
+ ┌──────────────┐  photos  ┌──────────────────────────┐
  │ Capture      │ ───────▶ │ 1  rotate + shrink       │
  │ Result       │          │ 2  EXTRACT  ─────────────┼──▶ Elastic Inference Service
- │ Library      │          │    (app/eis.py)          │    (document_extraction) ──┐
- │              │          │ 3  find the numbers  ◀───┼──────────── Markdown ──────┘
+ │ Today        │          │    (app/eis.py)          │    (document_extraction) ──┐
+ │ Library      │          │ 3  find the numbers  ◀───┼──────────── Markdown ──────┘
  │              │ ◀─────── │    (app/parse.py)        │
- │              │  result  │ 4  INGEST  ──────────────┼──▶ Elasticsearch  (index food_labels)
+ │              │  result  │ 4  INGEST  ──────────────┼──▶ Elasticsearch  (food_labels, food_log)
  │              │          │                          │
- │              │ search ─▶│ SEARCH  /api/search ─────┼──▶ Elasticsearch  (the Library)
+ │              │ search ─▶│ SEARCH  /api/search,     │
+ │              │  today ─▶│         /api/today  ─────┼──▶ Elasticsearch  (Library, daily totals)
  └──────────────┘          └──────────────────────────┘
 ```
 
-It is built for a phone (and shows as a phone-width column on a laptop). Two tabs: **Capture** (take or
-pick a photo) and **Library** (search what you have read, filter by allergen, see counts). After a
-read, the **Result** opens as a sheet: the carbohydrate number next to the photo, the other numbers,
-and the unverified text, with the Extract → Ingest → Search strip under the name. Name and language can be edited there, and the **Raw request & response** button shows the exact API call.
+It is built for a phone (and shows as a phone-width column on a laptop). Three tabs:
 
-| Capture | Result | Raw request & response | Library |
-|---|---|---|---|
-| <img src="screenshots/capture.png" width="180" alt="The Capture screen: a viewfinder frame and a Take photo button"> | <img src="screenshots/result.png" width="180" alt="The Result sheet: 27 g carbohydrate, the nutrient rows and the Extract, Ingest, Search strip"> | <img src="screenshots/raw.png" width="180" alt="The raw request sent to document_extraction and the JSON response that came back"> | <img src="screenshots/library.png" width="180" alt="The Library: a three-column grid of label photos"> |
+- **Capture**: take two photos of a pack. The **front** (optional) gives the product name; the **back**
+  has the nutrition panel.
+- **Today**: net carbs and calories eaten today against your own limits (defaults 100 g net carbs and
+  1800 kcal; change them behind the sliders icon). A total turns red once it goes over.
+- **Library**: search what you have read, filter by allergen, see counts.
+
+After a read, the **Result** opens as a sheet: **net carbs** (carbohydrate minus fibre) and **calories**
+big, the photo, the other numbers, and the unverified text, with the Extract → Ingest → Search strip under
+the name. You can edit the name, language and the carbohydrate, fibre and calorie numbers by hand (the app
+marks them "edited"), choose how many portions you ate, and tap **Add to today**. The **Raw request &
+response** button shows the exact API call.
+
+| Capture | Result | Today | Raw request & response | Library |
+|---|---|---|---|---|
+| <img src="screenshots/capture.png" width="150" alt="The Capture screen: Front and Back photo slots and a viewfinder"> | <img src="screenshots/result.png" width="150" alt="The Result: big net carbs and calories, portions and Add to today"> | <img src="screenshots/today.png" width="150" alt="Today: net carbs in red over the limit, calories, and what was eaten"> | <img src="screenshots/raw.png" width="150" alt="The raw request sent to document_extraction and the JSON response"> | <img src="screenshots/library.png" width="150" alt="The Library: a grid of label photos"> |
 
 The Library photos are Open Food Facts samples (see References).
 
 ## What you can trust
 
 - **Nutrition numbers** come straight from what the model read, and the photo is always shown next
-  to them: check them against the pack.
+  to them: check them against the pack. If one is wrong, edit it; the label is then marked as edited
+  by hand, and so is any log entry made from it.
+- **Net carbs** are carbohydrate minus fibre. If fibre was not read, the full carbohydrate is counted and
+  the app says "fibre not read", so a missing figure never makes the number look lower than it is.
+- **The product name** from the front photo is a guess (the first readable line). The model can invent
+  words where the frame cuts the text off, so it is always editable.
 - **Ingredients and allergens** are shown as **unverified text**. The model guesses at anything cut
   off by the edge of the photo, so we never turn that text into numbers.
 - **Allergen mentions** are keywords found in that text (the 14 EU allergens, in English, French,
   Spanish, Portuguese, German and Italian), marked **contains** or **may contain**, and always
   labelled "as read". It is not a safety check.
+- **Your limits** live in your browser. The app compares totals with them and never tells anyone what to
+  eat. It is a demo and not medical advice.
 - **Extracted text and the raw API call**: on every Result, *Extracted text* shows what the model wrote
   (Markdown) and what the app made of it (JSON), and the **Raw request & response** button shows the exact
   HTTP request sent to the Elastic Inference Service and the JSON that came back.
@@ -66,12 +85,14 @@ I tried it on 50 Open Food Facts photos in 7 languages: 64% of the values and 58
 ```bash
 cp .env.example .env     # add ES_URL and ES_API_KEY from your Elasticsearch Serverless project
 make setup               # install (uses uv)
-make seed                # optional: read the 50 sample photos into the Library (about $0.09)
+make seed                # optional: read the 50 sample photos into the Library
 make serve               # open http://127.0.0.1:8000
 make test                # tests, no network needed
 ```
 
-The first read after a quiet period can take a few minutes while the model wakes up.
+The first read after a quiet period can take a few minutes while the model wakes up. The `food_labels` and
+`food_log` indices are created on first use. Writes refresh the index straight away so a saved label or log
+entry shows up at once (fine for a demo; a busy app would batch writes).
 
 `document_extraction` is in preview on Elasticsearch Serverless: your project needs the `.jina-reader`
 endpoint. At the time of writing the response has no token counts (that may change), so the app shows read time and nothing about cost.
@@ -80,8 +101,8 @@ endpoint. At the time of writing the response has no token counts (that may chan
 
 | | |
 |---|---|
-| `app/` | the backend: `eis.py` (model calls), `parse.py` (numbers), `allergens.py`, `off.py`, `es.py`, `pipeline.py`, `main.py` |
-| `web/` | the page: `index.html`, `style.css`, and `js/` (four ES modules: `main.js` tabs, capture and wiring; `result.js`; `library.js`; `util.js` helpers and state; no build step) |
+| `app/` | the backend: `eis.py` (model calls), `parse.py` (numbers), `naming.py` (name from the front photo), `diary.py` (net carbs and log entries), `allergens.py`, `es.py` (both indices), `pipeline.py`, `main.py` |
+| `web/` | the page: `index.html`, `style.css`, and `js/` (five ES modules: `main.js` tabs, capture and wiring; `result.js`; `today.js`; `library.js`; `util.js` helpers and state; no build step) |
 | `scripts/` | tools: `score.py` (benchmark against Open Food Facts), `seed_off.py`, `fetch_off_sample.py`, `smoke_test.py` |
 
 ## References

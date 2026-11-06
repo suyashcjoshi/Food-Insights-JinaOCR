@@ -39,6 +39,19 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
+def _summary(entries: list[dict], day: str) -> dict:
+    mine = [e for e in entries if e["day"] == day]
+    return {
+        "day": day,
+        "entries": mine,
+        "totals": {
+            "net_carbs_g": round(sum(e.get("net_carbs_g", 0) for e in mine), 1),
+            "calories_kcal": round(sum(e.get("calories_kcal", 0) for e in mine)),
+            "entries": len(mine),
+        },
+    }
+
+
 @pytest.fixture(scope="module")
 def server(tmp_path_factory):
     """The real app on a real port, EIS / ES / OFF replaced by in-memory fakes."""
@@ -60,6 +73,15 @@ def server(tmp_path_factory):
         lambda q, a, lang, size, kind: {"total": len(docs), "hits": list(docs.values())},
     )
     mp.setattr(es, "aggregate", lambda q, a, lang, kind: {"total": len(docs), "allergens": [], "languages": []})  # fmt: skip
+    entries: list[dict] = []
+    mp.setattr(es, "update_doc", lambda doc_id, fields: docs[doc_id].update(fields))
+    mp.setattr(es, "log_entry", entries.append)
+    mp.setattr(
+        es,
+        "delete_log_entry",
+        lambda entry_id: bool([entries.remove(e) for e in list(entries) if e["id"] == entry_id]),
+    )
+    mp.setattr(es, "day_summary", lambda day: _summary(entries, day))
     port = free_port()
     srv = uvicorn.Server(uvicorn.Config(main.app, host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=srv.run, daemon=True)
@@ -126,14 +148,14 @@ class Browser:
     def open(self, url: str) -> None:
         self.call("Page.navigate", url=url)
         assert self.wait(
-            "document.readyState === 'complete' && document.querySelector('#primary')?.textContent === 'Take photo'"
+            "document.readyState === 'complete' && document.querySelector('#primary')?.textContent === 'Take front photo'"
         )
 
     def reload(self) -> None:
         self.call("Page.reload")
         time.sleep(0.3)
         assert self.wait(
-            "document.readyState === 'complete' && document.querySelector('#primary')?.textContent === 'Take photo'"
+            "document.readyState === 'complete' && document.querySelector('#primary')?.textContent === 'Take front photo'"
         )
 
     def upload(self, selector: str, path: Path) -> None:
@@ -159,13 +181,14 @@ def test_result_sheet_opens_after_a_read_and_closes_every_way(page, tmp_path):
     photo = tmp_path / "label.jpg"
     Image.new("RGB", (400, 300), "white").save(photo)
 
-    # two tabs only: the result is a sheet, not a tab
+    # three tabs: the result is a sheet, not a tab
     assert page.ev(
         "[...document.querySelectorAll('.tabs button')].map(b => b.textContent.trim())"
-    ) == ["Capture", "Library"]
+    ) == ["Capture", "Today", "Library"]
     assert page.ev("document.querySelector('#sheet-result').hidden") is True
-    assert page.ev("document.querySelector('#primary').textContent") == "Take photo"
+    assert page.ev("document.querySelector('#primary').textContent") == "Take front photo"
 
+    page.ev("document.querySelector('#skip-front').click()")  # back photo only
     page.upload("#pick", photo)
     assert page.wait("document.querySelector('#primary').textContent === 'Read label'")
     page.ev("document.querySelector('#primary').click()")
@@ -191,9 +214,10 @@ def test_result_sheet_opens_after_a_read_and_closes_every_way(page, tmp_path):
     assert page.wait("!document.querySelector('#sheet-result').hidden")
     page.ev("document.querySelector('#r-again').click()")  # "Read another label" starts fresh
     assert page.wait("document.querySelector('#sheet-result').hidden")
-    assert page.ev("document.querySelector('#primary').textContent") == "Take photo"
+    assert page.ev("document.querySelector('#primary').textContent") == "Take front photo"
     assert page.ev("document.querySelector('#preview').hidden") is True
 
+    page.ev("document.querySelector('#skip-front').click()")  # back photo only
     page.upload("#pick", photo)
     assert page.wait("document.querySelector('#primary').textContent === 'Read label'")
     page.ev("document.querySelector('#primary').click()")
@@ -209,6 +233,7 @@ def test_the_result_shows_the_pipeline_and_a_raw_request_and_response_button(pag
     """Extract -> Ingest -> Search is on the Result; the raw API call is one button away, both halves."""
     photo = tmp_path / "label.jpg"
     Image.new("RGB", (400, 300), "white").save(photo)
+    page.ev("document.querySelector('#skip-front').click()")  # back photo only
     page.upload("#pick", photo)
     assert page.wait("document.querySelector('#primary').textContent === 'Read label'")
     page.ev("document.querySelector('#primary').click()")
@@ -245,6 +270,7 @@ def test_a_photo_with_no_panel_gets_an_explanation_not_an_empty_table(page, tmp_
     monkeypatch.setattr(eis, "read", lambda url: call)
     photo = tmp_path / "apples.jpg"
     Image.new("RGB", (400, 300), "white").save(photo)
+    page.ev("document.querySelector('#skip-front').click()")  # back photo only
     page.upload("#pick", photo)
     assert page.wait("document.querySelector('#primary').textContent === 'Read label'")
     page.ev("document.querySelector('#primary').click()")
@@ -259,3 +285,93 @@ def test_a_photo_with_no_panel_gets_an_explanation_not_an_empty_table(page, tmp_
     assert "Fresh apples" in page.ev(
         "document.querySelector('#r-unv').textContent"
     )  # what we read is still shown
+
+
+def read_back_photo(page, tmp_path):
+    """Skip the front photo, give a back photo, read it, wait for the Result."""
+    photo = tmp_path / "back.jpg"
+    Image.new("RGB", (400, 300), "white").save(photo)
+    page.ev("document.querySelector('#skip-front').click()")
+    page.upload("#pick", photo)
+    assert page.wait("document.querySelector('#primary').textContent === 'Read label'")
+    page.ev("document.querySelector('#primary').click()")
+    assert page.wait("!document.querySelector('#sheet-result').hidden")
+
+
+def test_two_photos_front_for_the_name_then_back_for_the_numbers(page, tmp_path):
+    front, back = tmp_path / "front.jpg", tmp_path / "back.jpg"
+    Image.new("RGB", (400, 300), "white").save(front)
+    Image.new("RGB", (400, 300), "white").save(back)
+    assert page.ev("document.querySelector('#primary').textContent") == "Take front photo"
+    assert page.ev("document.querySelector('#skip-front').hidden") is False
+    page.upload("#pick", front)  # goes to the front slot, then moves on to the back
+    assert page.wait("document.querySelector('#primary').textContent === 'Take back photo'")
+    assert page.ev("document.querySelector('#front-thumb').hidden") is False
+    assert page.ev("document.querySelector('#slot-back').getAttribute('aria-pressed')") == "true"
+    page.upload("#pick", back)
+    assert page.wait("document.querySelector('#primary').textContent === 'Read label'")
+    page.ev("document.querySelector('#primary').click()")
+    assert page.wait("!document.querySelector('#sheet-result').hidden")
+    assert page.ev("document.querySelector('#r-name').value") != ""  # the name came from the front
+    assert page.ev("document.querySelector('#r-thumb-front').hidden") is False
+
+
+def test_big_net_carbs_and_calories_edit_by_hand_and_add_to_today(page, tmp_path):
+    read_back_photo(page, tmp_path)
+    figures = page.ev(
+        "[...document.querySelectorAll('#r-hero .big')].map(b => b.querySelector('.big-label').textContent)"
+    )
+    assert figures == ["Net carbs", "Calories"]
+    assert page.ev("document.querySelector('#r-hero .num').textContent") == "27"
+
+    page.ev("document.querySelector('#r-edit').click()")  # fix a number by hand
+    page.ev("document.querySelector('#e-fiber').value = '7'")
+    page.ev("document.querySelector('#r-editor').requestSubmit()")
+    assert page.wait("document.querySelector('#r-hero .num').textContent === '20'")  # 27 - 7
+    assert "fibre" in page.ev("document.querySelector('#r-edited').textContent")
+
+    page.ev("document.querySelector('#log-plus').click()")  # 1.5 portions
+    assert page.ev("document.querySelector('#log-portions').textContent") == "1.5"
+    page.ev("document.querySelector('#log-add').click()")
+    assert page.wait("!document.querySelector('#log-done').hidden")
+    assert (
+        page.ev("document.querySelector('#log-totals [data-total=carbs] .num').textContent") == "30"
+    )  # 20 x 1.5
+
+    page.ev("document.querySelector('#log-see').click()")
+    assert page.wait("!document.querySelector('#screen-today').hidden")
+    assert page.wait("document.querySelectorAll('#today-entries .entry').length === 1")
+    assert (
+        page.ev("document.querySelector('#today-totals [data-total=carbs] .num').textContent")
+        == "30"
+    )
+    assert (
+        page.ev("!!document.querySelector('#today-totals .total.over')") is False
+    )  # 30 of 100: fine
+
+    page.ev("document.querySelector('#today-entries .remove').click()")
+    assert page.wait("document.querySelectorAll('#today-entries .entry').length === 0")
+    assert page.ev("document.querySelector('#today-empty').hidden") is False
+
+
+def test_today_turns_red_over_your_limit_and_the_limits_are_behind_the_gear(page, tmp_path):
+    read_back_photo(page, tmp_path)
+    page.ev("document.querySelector('#log-add').click()")
+    assert page.wait("!document.querySelector('#log-done').hidden")
+    page.ev("document.querySelector('#log-see').click()")
+    assert page.wait("document.querySelectorAll('#today-entries .entry').length >= 1")
+    assert page.ev("!!document.querySelector('#today-totals .total.over')") is False
+
+    page.ev("document.querySelector('#limits-open').click()")  # the limits live behind the gear
+    assert page.ev("document.querySelector('#sheet-limits').hidden") is False
+    assert page.ev("document.querySelector('#lim-carbs').value") == "100"  # defaults
+    assert page.ev("document.querySelector('#lim-kcal').value") == "1800"
+    page.ev("document.querySelector('#lim-carbs').value = '10'")
+    page.ev("document.querySelector('#limits-save').click()")
+    assert page.wait("!!document.querySelector('#today-totals [data-total=carbs].over')")
+    assert (
+        page.ev("document.querySelector('#today-totals [data-total=carbs] .t-flag').textContent")
+        == "Over your limit"
+    )
+    assert page.ev("!!document.querySelector('#today-totals [data-total=calories].over')") is False
+    assert "10" in page.ev("localStorage.getItem('fi.limits')")  # remembered

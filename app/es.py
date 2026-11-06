@@ -76,6 +76,11 @@ MAPPING = {
             "properties": {"name": {"type": "keyword"}, "kind": {"type": "keyword"}},
         },
         "source_url": {"type": "keyword"},
+        "front_image_path": {"type": "keyword"},  # the optional front-of-pack photo
+        "name_source": {
+            "type": "keyword"
+        },  # front | typed (a guess from the front, or what you typed)
+        "edited_fields": {"type": "keyword"},  # numbers a person corrected by hand
         "raw_markdown": {"type": "text"},
         "plain_text": {"type": "text"},
         "telemetry": {
@@ -83,10 +88,33 @@ MAPPING = {
                 "endpoint": {"type": "keyword"},
                 "task": {"type": "keyword"},
                 "ocr_ms": {"type": "integer"},
+                "front_ocr_ms": {"type": "integer"},
             }
         },
     }
 }
+
+# One entry per thing eaten: a snapshot of the label's numbers times the portions (see diary.py).
+LOG_MAPPING = {
+    "properties": {
+        "id": {"type": "keyword"},
+        "label_id": {"type": "keyword"},
+        "product_name": {"type": "text", "fields": {"raw": {"type": "keyword"}}},
+        "image_path": {"type": "keyword"},
+        "day": {"type": "keyword"},  # the person's local date, e.g. 2026-11-06
+        "eaten_at": {"type": "date"},
+        "portions": {"type": "float"},
+        "basis": {"type": "keyword"},
+        "net_carbs_g": {"type": "float"},
+        "calories_kcal": {"type": "float"},
+        "fiber_read": {"type": "boolean"},
+        "edited": {"type": "boolean"},
+    }
+}
+LOG_ENTRIES_SIZE = 200
+# Writes refresh the index straight away (0.9 s) instead of waiting for the next scheduled refresh
+# (about 5 s on Serverless), so a label or a log entry shows up the moment it is saved. Fine at demo
+# volumes; a busy production app would batch writes and not refresh on each one.
 
 
 # --- connection and single-document calls ------------------------------------------------------
@@ -115,12 +143,24 @@ def ensure_index() -> bool:
 
 def index_doc(doc: dict) -> None:
     ensure_index()
-    client().index(index=index_name(), id=doc["id"], document=doc, refresh="wait_for")
+    client().index(index=index_name(), id=doc["id"], document=doc, refresh=True)
 
 
 def update_doc(doc_id: str, fields: dict) -> None:
     """Merge `fields` into an existing document (a name or language edit)."""
-    client().update(index=index_name(), id=doc_id, doc=fields, refresh="wait_for")
+    client().update(index=index_name(), id=doc_id, doc=fields, refresh=True)
+
+
+def log_index_name() -> str:
+    return os.getenv("ES_LOG_INDEX", "food_log")
+
+
+def ensure_log_index() -> bool:
+    es, name = client(), log_index_name()
+    if es.indices.exists(index=name):
+        return False
+    es.indices.create(index=name, mappings=LOG_MAPPING)
+    return True
 
 
 def get_doc(doc_id: str) -> dict | None:
@@ -256,3 +296,52 @@ def aggregate(*args, **kwargs) -> dict:
         return _aggregate(*args, **kwargs)
     except NotFoundError:
         return dict(EMPTY_AGGS)
+
+
+# --- the daily log -------------------------------------------------------------------------------
+
+
+def log_entry(entry: dict) -> None:
+    ensure_log_index()
+    client().index(index=log_index_name(), id=entry["id"], document=entry, refresh=True)
+
+
+def delete_log_entry(entry_id: str) -> bool:
+    """True when an entry was removed."""
+    try:
+        client().delete(index=log_index_name(), id=entry_id, refresh=True)
+    except NotFoundError:
+        return False
+    return True
+
+
+def day_summary(day: str) -> dict:
+    """Everything eaten on `day`, oldest first, with the day's totals from one aggregation."""
+    empty = {
+        "day": day,
+        "entries": [],
+        "totals": {"net_carbs_g": 0, "calories_kcal": 0, "entries": 0},
+    }
+    try:
+        body = client().search(
+            index=log_index_name(),
+            query={"term": {"day": day}},
+            sort=[{"eaten_at": "asc"}],
+            size=LOG_ENTRIES_SIZE,
+            aggs={
+                "net_carbs": {"sum": {"field": "net_carbs_g"}},
+                "calories": {"sum": {"field": "calories_kcal"}},
+            },
+        )
+    except NotFoundError:  # before the first entry there is no log index: an empty day
+        return empty
+    aggs = body["aggregations"]
+    return {
+        "day": day,
+        "entries": [hit["_source"] for hit in body["hits"]["hits"]],
+        "totals": {
+            "net_carbs_g": round(aggs["net_carbs"]["value"] or 0, 1),
+            "calories_kcal": round(aggs["calories"]["value"] or 0),
+            "entries": body["hits"]["total"]["value"],
+        },
+    }

@@ -300,12 +300,16 @@ def test_patch_edits_name_and_language(stored):
     r = stored.patch("/api/doc/abc", json={"product_name": "  Greek yogurt ", "language": "EN"})
     assert r.status_code == 200
     assert r.json()["product_name"] == "Greek yogurt" and r.json()["language"] == "en"
-    assert stored.written == {"product_name": "Greek yogurt", "language": "en"}
+    assert stored.written == {
+        "product_name": "Greek yogurt",
+        "name_source": "typed",
+        "language": "en",
+    }
 
 
 def test_patch_empty_string_clears_a_field(stored):
     stored.patch("/api/doc/abc", json={"product_name": "", "language": ""})
-    assert stored.written == {"product_name": None, "language": None}
+    assert stored.written == {"product_name": None, "name_source": "typed", "language": None}
 
 
 def test_patch_rejects_a_bad_language_and_an_unknown_capture(stored):
@@ -338,3 +342,104 @@ def test_a_photo_with_no_nutrition_panel_is_flagged(api, monkeypatch):
 
 def test_a_real_panel_is_not_flagged_no_panel(api):
     assert "no_panel" not in post(api).json()["doc"]["parse_flags"]
+
+
+# --- hand edits to the numbers -------------------------------------------------------------------
+
+
+def test_patch_edits_the_big_numbers_and_marks_them_edited(stored):
+    r = stored.patch("/api/doc/abc", json={"nutrients": {"carbohydrates_g": 31.5, "fiber_g": 4}})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["nutrients"] == {"carbohydrates_g": 31.5, "basis": "100g", "fiber_g": 4}
+    assert body["edited_fields"] == ["carbohydrates_g", "fiber_g"]
+    assert stored.written["edited_fields"] == ["carbohydrates_g", "fiber_g"]
+
+
+def test_patch_only_allows_the_carb_fibre_and_calorie_numbers(stored):
+    assert stored.patch("/api/doc/abc", json={"nutrients": {"fat_g": 3}}).status_code == 400
+    assert stored.patch("/api/doc/abc", json={"nutrients": {"fiber_g": -1}}).status_code == 400
+    assert stored.written == {}
+
+
+# --- the daily log -------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def diary_api(api, monkeypatch):
+    label = {"id": "abc", "product_name": "Greek yogurt", "image_path": "captures/abc.jpg",
+             "nutrients": {"carbohydrates_g": 27.0, "fiber_g": 4.0, "energy_kcal": 150.0, "basis": "serving"}}  # fmt: skip
+    logged = []
+    monkeypatch.setattr(es, "get_doc", lambda doc_id: label if doc_id == "abc" else None)
+    monkeypatch.setattr(es, "log_entry", logged.append)
+    api.logged = logged
+    return api
+
+
+def test_adding_to_today_snapshots_net_carbs_and_calories_times_portions(diary_api):
+    r = diary_api.post("/api/log", json={"label_id": "abc", "portions": 2, "day": "2026-11-06"})
+    assert r.status_code == 200
+    entry = r.json()
+    assert entry["net_carbs_g"] == 46.0  # (27 - 4) x 2
+    assert entry["calories_kcal"] == 300
+    assert entry["fiber_read"] is True and entry["day"] == "2026-11-06"
+    assert diary_api.logged[0]["label_id"] == "abc"
+
+
+def test_adding_to_today_rejects_a_bad_day_bad_portions_and_unknown_label(diary_api):
+    ok = {"label_id": "abc", "portions": 1, "day": "2026-11-06"}
+    assert diary_api.post("/api/log", json={**ok, "day": "tomorrow"}).status_code == 400
+    assert diary_api.post("/api/log", json={**ok, "portions": 0}).status_code == 400
+    assert diary_api.post("/api/log", json={**ok, "portions": 99}).status_code == 400
+    assert diary_api.post("/api/log", json={**ok, "label_id": "nope"}).status_code == 404
+    assert diary_api.logged == []
+
+
+def test_today_returns_the_summary_and_validates_the_day(api, monkeypatch):
+    summary = {
+        "day": "2026-11-06",
+        "entries": [],
+        "totals": {"net_carbs_g": 0, "calories_kcal": 0, "entries": 0},
+    }
+    monkeypatch.setattr(es, "day_summary", lambda day: summary)
+    assert api.get("/api/today?day=2026-11-06").json() == summary
+    assert api.get("/api/today?day=nope").status_code == 400
+
+
+def test_removing_an_entry(api, monkeypatch):
+    monkeypatch.setattr(es, "delete_log_entry", lambda entry_id: entry_id == "e1")
+    assert api.delete("/api/log/e1").status_code == 200
+    assert api.delete("/api/log/zzz").status_code == 404
+
+
+# --- two photos ----------------------------------------------------------------------------------
+
+
+def test_front_photo_gives_the_product_name_and_is_stored_with_the_label(api, monkeypatch):
+    reads = []
+
+    def fake_read(url):
+        reads.append(url)
+        return fake_call(text="# Chobani Greek Yogurt\n\n500 g") if len(reads) == 2 else fake_call()
+
+    monkeypatch.setattr(eis, "read", fake_read)
+    r = api.post(
+        "/api/capture",
+        files={"image": ("b.jpg", jpeg(), "image/jpeg"), "front": ("f.jpg", jpeg(), "image/jpeg")},
+    )
+    assert r.status_code == 200
+    doc = r.json()["doc"]
+    assert doc["product_name"] == "Chobani Greek Yogurt" and doc["name_source"] == "front"
+    assert doc["front_image_path"].endswith("_front.jpg")
+    assert len(reads) == 2
+
+
+def test_a_typed_name_wins_over_the_front_photo(api, monkeypatch):
+    monkeypatch.setattr(eis, "read", lambda url: fake_call(text="Something else"))
+    r = api.post(
+        "/api/capture",
+        files={"image": ("b.jpg", jpeg(), "image/jpeg"), "front": ("f.jpg", jpeg(), "image/jpeg")},
+        data={"product_name": "My yogurt"},
+    )
+    assert r.json()["doc"]["product_name"] == "My yogurt"
+    assert r.json()["doc"]["name_source"] == "typed"

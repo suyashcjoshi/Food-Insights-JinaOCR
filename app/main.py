@@ -2,7 +2,8 @@
 
     uv run uvicorn app.main:app --reload     (or: make serve)
 
-Reads labels, never advises: no endpoint computes a dose or suggests what to eat.
+Reads labels and adds up what you ate; never advises: no endpoint suggests what to eat or computes a dose.
+Limits are the person's own and live in the browser.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from app import eis, es, pipeline
+from app import diary, eis, es, pipeline
 from app.allergens import NAMES
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -80,6 +81,7 @@ async def warmup() -> dict:
 @app.post("/api/capture")
 async def capture(
     image: Annotated[UploadFile, File()],
+    front: Annotated[UploadFile | None, File()] = None,
     language: Annotated[str | None, Form()] = None,
     product_name: Annotated[str | None, Form()] = None,
     source: Annotated[str, Form()] = "demo",
@@ -88,10 +90,14 @@ async def capture(
     data = await image.read()
     if not data or len(data) > MAX_UPLOAD:
         raise HTTPException(400, "send one image up to 15 MB")
+    front_data = await front.read() if front else None
+    if front_data is not None and (not front_data or len(front_data) > MAX_UPLOAD):
+        raise HTTPException(400, "the front photo must be one image up to 15 MB")
     try:
         result = await asyncio.to_thread(
             pipeline.capture,
             data,
+            front_bytes=front_data,
             language=_clean(language),
             product_name=_clean(product_name),
             source=source,
@@ -152,19 +158,36 @@ def _is_language_code(lang: str) -> bool:
     return 2 <= len(lang) <= 3 and lang.isalpha()
 
 
+# The numbers a person may correct by hand (the ones the totals and the big figures depend on).
+EDITABLE_NUTRIENTS = ("carbohydrates_g", "fiber_g", "energy_kcal")
+MAX_NUTRIENT_VALUE = 10_000
+
+
 class DocPatch(BaseModel):
     """Fields a person may correct on a capture. Only the ones sent are changed; empty clears."""
 
     product_name: str | None = None
     language: str | None = None
+    nutrients: dict[str, float] | None = None
+
+
+def _nutrient_edits(sent: dict[str, float], current: dict) -> tuple[dict, list[str]]:
+    """(the nutrients object with the edits applied, the keys that were edited)."""
+    unknown = sorted(set(sent) - set(EDITABLE_NUTRIENTS))
+    if unknown:
+        raise HTTPException(400, f"only {list(EDITABLE_NUTRIENTS)} can be edited, not {unknown}")
+    if any(not 0 <= value <= MAX_NUTRIENT_VALUE for value in sent.values()):
+        raise HTTPException(400, f"numbers must be between 0 and {MAX_NUTRIENT_VALUE}")
+    return {**current, **sent}, sorted(sent)
 
 
 def _edits(patch: DocPatch) -> dict:
-    """The fields the person sent, cleaned; an empty value clears the field."""
+    """The name / language the person sent, cleaned; an empty value clears the field."""
     sent = patch.model_fields_set
     updates: dict = {}
     if "product_name" in sent:
         updates["product_name"] = (patch.product_name or "").strip()[:MAX_NAME_CHARS] or None
+        updates["name_source"] = "typed"
     if "language" in sent:
         lang = (patch.language or "").strip().lower()
         if lang and not _is_language_code(lang):
@@ -175,14 +198,65 @@ def _edits(patch: DocPatch) -> dict:
 
 @app.patch("/api/doc/{doc_id}")
 async def patch_doc(doc_id: str, patch: DocPatch) -> dict:
-    """Edit name or language."""
+    """Edit name, language, or the carbohydrate / fibre / calorie numbers (marked as edited by hand)."""
     updates = _edits(patch)
     found = await asyncio.to_thread(es.get_doc, doc_id)
     if found is None:
         raise HTTPException(404, "no such capture")
+    if patch.nutrients:
+        nutrients, edited = _nutrient_edits(patch.nutrients, found.get("nutrients", {}))
+        updates["nutrients"] = nutrients
+        updates["edited_fields"] = sorted({*found.get("edited_fields", []), *edited})
     if updates:
         await asyncio.to_thread(es.update_doc, doc_id, updates)
-    return {k: updates.get(k, found.get(k)) for k in ("product_name", "language")}
+    merged = {**found, **updates}
+    return {k: merged.get(k) for k in ("product_name", "language", "nutrients", "edited_fields")}
+
+
+# --- the daily log -------------------------------------------------------------------------------
+
+
+class LogIn(BaseModel):
+    label_id: str
+    portions: float = 1.0
+    day: str  # the person's local date, from the page
+
+
+def _check_day(day: str) -> None:
+    if not diary.is_valid_day(day):
+        raise HTTPException(400, "day must be a date like 2026-11-06")
+
+
+@app.post("/api/log")
+async def add_to_today(entry_in: LogIn) -> dict:
+    """Add a read label to a day's log: its numbers (as stored, edits included) times the portions."""
+    _check_day(entry_in.day)
+    if not diary.MIN_PORTIONS <= entry_in.portions <= diary.MAX_PORTIONS:
+        raise HTTPException(
+            400, f"portions must be between {diary.MIN_PORTIONS} and {diary.MAX_PORTIONS}"
+        )
+    label = await asyncio.to_thread(es.get_doc, entry_in.label_id)
+    if label is None:
+        raise HTTPException(404, "no such label")
+    entry = diary.entry_from_label(label, entry_in.portions, entry_in.day)
+    await asyncio.to_thread(es.log_entry, entry)
+    return entry
+
+
+@app.get("/api/today")
+async def today(day: str) -> dict:
+    _check_day(day)
+    try:
+        return await asyncio.to_thread(es.day_summary, day)
+    except Exception as exc:
+        raise HTTPException(503, f"log unavailable: {str(exc)[:ERROR_DETAIL_CHARS]}") from exc
+
+
+@app.delete("/api/log/{entry_id}")
+async def remove_entry(entry_id: str) -> dict:
+    if not await asyncio.to_thread(es.delete_log_entry, entry_id):
+        raise HTTPException(404, "no such entry")
+    return {"removed": entry_id}
 
 
 (ROOT / "data" / "captures").mkdir(parents=True, exist_ok=True)

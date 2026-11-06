@@ -19,10 +19,21 @@
         <h1>Food Insights</h1>
       </header>
 
+      <div class="slots" role="group" aria-label="Photos of the pack">
+        <button id="slot-front" class="slot" type="button" aria-pressed="true">
+          <img id="front-thumb" alt="Front of the pack" hidden>
+          <span class="slot-text"><span class="slot-title">1 Front</span><span class="slot-sub">for the name, optional</span></span>
+        </button>
+        <button id="slot-back" class="slot" type="button" aria-pressed="false">
+          <img id="back-thumb" alt="Back of the pack" hidden>
+          <span class="slot-text"><span class="slot-title">2 Back</span><span class="slot-sub">the nutrition panel</span></span>
+        </button>
+      </div>
+
       <div class="finder" id="finder">
         <i class="mark tl"></i><i class="mark tr"></i><i class="mark bl"></i><i class="mark br"></i>
         <img id="preview" alt="The photo you chose" hidden>
-        <p id="finder-hint">Fit the whole label in the frame</p>
+        <p id="finder-hint">The front of the pack, so we can read the name</p>
       </div>
       <p class="caption center">Reads the label, never advises.</p>
       <button id="why-open" class="link" type="button">Why framing matters</button>
@@ -31,8 +42,28 @@
       <div class="actions">
         <button id="primary" class="primary" type="button">Take photo</button>
         <div class="row2">
+          <button id="skip-front" class="text" type="button">Skip front photo</button>
           <button id="choose" class="text" type="button">Choose from library</button>
         </div>
+      </div>
+    </section>
+
+    <!-- Today -->
+    <section id="screen-today" class="screen" aria-label="Today" hidden>
+      <header class="topbar">
+        <h1>Today</h1>
+        <button id="limits-open" class="icon" type="button" aria-label="Your limits" aria-haspopup="dialog">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>
+        </button>
+      </header>
+      <div class="scroll" id="today-scroll">
+        <p id="today-date" class="caption"></p>
+        <div id="today-totals" class="totals"></div>
+        <h2 class="sec">Eaten today</h2>
+        <div id="today-entries" class="entries"></div>
+        <p id="today-empty" class="secondary" hidden>Nothing logged yet. Read a label, then tap Add to today.</p>
+        <p id="today-note" class="msg" role="status"></p>
+        <p class="caption">Compares what you ate with your own limits. It never says what to eat. Not medical advice.</p>
       </div>
     </section>
 
@@ -68,6 +99,10 @@
       <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
       <span>Capture</span>
     </button>
+    <button type="button" data-tab="today">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>
+      <span>Today</span>
+    </button>
     <button type="button" data-tab="library">
       <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>
       <span>Library</span>
@@ -83,7 +118,8 @@
     </div>
     <div class="sheet-scroll" id="r-scroll">
       <div class="rhead">
-        <img id="r-thumb" class="thumb" alt="The photographed label">
+        <img id="r-thumb" class="thumb" alt="The back of the pack (nutrition panel)">
+        <img id="r-thumb-front" class="thumb front" alt="The front of the pack" hidden>
         <div class="rhead-text">
           <input id="r-name" class="name" type="text" placeholder="Add name" aria-label="Product name" maxlength="200" autocomplete="off">
           <p id="r-read" class="secondary"></p>
@@ -110,6 +146,32 @@
 
       <div id="r-hero" class="hero"></div>
       <p id="r-basis" class="secondary basis"></p>
+      <p id="r-edited" class="edited" hidden></p>
+      <button id="r-edit" class="text left" type="button">Edit numbers</button>
+      <form id="r-editor" class="editor" hidden>
+        <label>Carbohydrate (g)<input id="e-carbs" type="number" inputmode="decimal" step="0.1" min="0" max="10000"></label>
+        <label>Fibre (g)<input id="e-fiber" type="number" inputmode="decimal" step="0.1" min="0" max="10000"></label>
+        <label>Calories (kcal)<input id="e-kcal" type="number" inputmode="decimal" step="1" min="0" max="10000"></label>
+        <div class="row2">
+          <button id="e-cancel" class="text" type="button">Cancel</button>
+          <button id="e-save" class="primary small" type="submit">Save</button>
+        </div>
+      </form>
+
+      <section id="r-log" class="card log" aria-label="Add to today">
+        <div class="stepper">
+          <button id="log-minus" class="stepbtn" type="button" aria-label="Fewer portions">−</button>
+          <span id="log-portions" class="portions">1</span>
+          <button id="log-plus" class="stepbtn" type="button" aria-label="More portions">+</button>
+          <span id="log-basis" class="secondary"></span>
+        </div>
+        <button id="log-add" class="primary" type="button">Add to today</button>
+        <div id="log-done" hidden>
+          <p id="log-msg" class="secondary"></p>
+          <div id="log-totals" class="totals compact"></div>
+          <button id="log-see" class="text left" type="button">See today</button>
+        </div>
+      </section>
 
       <section id="r-panel" class="card" aria-label="Nutrition panel">
         <div class="card-head"><h2>Nutrition panel</h2></div>
@@ -159,6 +221,14 @@
       <li>Upright, one product.</li>
     </ul>
     <button class="primary close" type="button">Got it</button>
+  </div>
+
+  <div id="sheet-limits" class="sheet low" role="dialog" aria-modal="true" aria-labelledby="lim-title" hidden>
+    <h2 id="lim-title">Your daily limits</h2>
+    <label>Net carbs (g per day)<input id="lim-carbs" type="number" inputmode="decimal" min="1" step="1"></label>
+    <label>Calories (kcal per day)<input id="lim-kcal" type="number" inputmode="numeric" min="1" step="10"></label>
+    <p class="secondary">Today turns red when you go over. The limits are yours and stay in this browser. The app only compares numbers; it never says what to eat, and it is not medical advice.</p>
+    <button id="limits-save" class="primary" type="button">Save</button>
   </div>
 
   <div id="sheet-raw" class="sheet low tall" role="dialog" aria-modal="true" aria-labelledby="raw-title" hidden>
