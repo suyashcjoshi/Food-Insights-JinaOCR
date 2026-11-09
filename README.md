@@ -1,4 +1,4 @@
-# Food Insights
+# Food Insights with Elastic Inference Service (JINA OCR)
 
 Photograph a food label and the app reads the nutrition numbers, adds them up against your own daily
 limits, and saves everything so you can search it later, for example "every product that mentions
