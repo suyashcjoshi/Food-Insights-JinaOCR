@@ -14,3 +14,6 @@ data/captures/
 
 # local notes, results and working scripts; never committed
 _notes/
+
+# A/V scripts: internal drafts, kept in _notes/video/
+A_V Script*.md
