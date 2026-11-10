@@ -19,7 +19,7 @@
   --over-paper: #FDECEA;
 
   --bar-shadow: 0 -2px 12px rgb(0 0 0 / 0.10); /* the only shadow */
-  --font: "Inter Tight", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; /* system fonts: no call to a font server */
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace; /* raw drawer only */
   --tab-h: 56px;
   --gutter: 16px;
