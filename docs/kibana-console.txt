@@ -1,14 +1,7 @@
-# Kibana Dev Tools > Console. Paste the whole file and run each request with the green arrow, top to bottom.
-# Lines starting with # are comments. Every request below was run against an Elasticsearch Serverless project.
-# Labels: Open Food Facts product photos (data ODbL, images CC BY-SA). The text below is real output of the
-# document_extraction call, so no editing is needed.
-
-# ---------------------------------------------------------------------------------------------------------
-# 1. Is the reader there? Look for task_type document_extraction, inference_id .jina-reader. Nothing to create.
+# Check that the reader endpoint exists
 GET _inference/_all
 
-# ---------------------------------------------------------------------------------------------------------
-# 2. Extract: one call, image in, Markdown out. The filter keeps the response short (content only).
+# Extract text from an image URL (the filter returns only the Markdown)
 POST _inference/document_extraction/.jina-reader?filter_path=document_extraction.content
 {
   "input": [
@@ -23,9 +16,16 @@ POST _inference/document_extraction/.jina-reader?filter_path=document_extraction
   "task_settings": { "parameters": { "preset": "ocr" } }
 }
 
-# ---------------------------------------------------------------------------------------------------------
-# 3. The call stores nothing, so create an index. semantic_text needs no inference endpoint: on Serverless the
-#    default is .jina-embeddings-v5-text-small. copy_to feeds the label text into it.
+# Extract text from a base64 image
+POST _inference/document_extraction/.jina-reader?filter_path=document_extraction.content
+{
+  "input": [
+    { "content": { "type": "image", "format": "base64", "value": "data:image/png;base64,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" } }
+  ],
+  "task_settings": { "parameters": { "preset": "ocr" } }
+}
+
+# Create an index with a semantic_text field (default embedding model on Serverless)
 PUT food_labels_demo
 {
   "mappings": {
@@ -39,7 +39,7 @@ PUT food_labels_demo
   }
 }
 
-# 4. Index three labels (German, French, English): the Markdown the reader returned, as one-line JSON strings.
+# Index three extracted labels (German, French, English)
 PUT food_labels_demo/_doc/pesto-de?refresh=true
 {
   "product_name": "Pesto Rosso 200g",
@@ -64,51 +64,48 @@ PUT food_labels_demo/_doc/chocolat-en?refresh=true
   "content": "| NUTRITION INFORMATION PER 100g: |\n| --- |\n| Energi / Energiaa / Energi / Energi / Wartość energetyczna | 2483 kJ / 592 kcal |\n| Fett / Rasvaa / Fedt / Fett / Tłuszcz | 55 g |\n| - varav mättat fett / josta tyydyttynyttä rasvaa / heraf mættede fedtsyrer / hvorav mettet fett / w tym kwasy tłuszczowe nasycone | 30 g |\n| Kolhydrater/ Hiilihydraattia / Kulhydrater / Karbohydrater / Węglowodany | 14 g |\n| - varav sockerarter / josta sokereita / heraf sukkerarter / hvorav sukkerarter / w tym cukry | 7,0 g |\n| Protein / Proteiinia / Protein / Protein / Białko | 10 g |\n| Salt / Suolaa / Salt / Salt / Sól | 0,03 g |\n\nQUALITY GUARANTEE CHOCOLADEFABRIKEN LINDT & SPRONGLI AG\n\nDistribueras av / Markkinoija /"
 }
 
-# meaning should show "inference_id": ".jina-embeddings-v5-text-small"
+# Show the embedding model the semantic_text field resolved to
 GET food_labels_demo/_mapping
 
-# ---------------------------------------------------------------------------------------------------------
-# 5. Search by words. Only labels that contain the word match. No label prints "sugar": the German one says Zucker.
+# Search by words: no label contains "sugar", so no hits
 POST food_labels_demo/_search
 {
   "query": { "match": { "content": "sugar" } },
   "_source": ["product_name", "language"]
 }
 
-# Now the word as the German label prints it: one hit.
+# Search by words: matches the German label
 POST food_labels_demo/_search
 {
   "query": { "match": { "content": "Zucker" } },
   "_source": ["product_name", "language"]
 }
 
-# ---------------------------------------------------------------------------------------------------------
-# 6. Search by meaning. Same search API, only the query changes. An English question ranks the French label first.
-#    It ranks every label by closeness (it does not filter), so read the scores.
+# Search by meaning: ranks every label by closeness, so compare the scores
 POST food_labels_demo/_search
 {
   "query": { "semantic": { "field": "meaning", "query": "fresh dairy cheese" } },
   "_source": ["product_name", "language"]
 }
 
+# Search by meaning: a second query
 POST food_labels_demo/_search
 {
   "query": { "semantic": { "field": "meaning", "query": "dark chocolate high in fat" } },
   "_source": ["product_name", "language"]
 }
 
-# ---------------------------------------------------------------------------------------------------------
-# 7. The same data with ES|QL (in Discover, pick ES|QL mode and paste only the query text).
+# ES|QL: labels per language
 POST _query?format=txt
 {
   "query": "FROM food_labels_demo | STATS labels = COUNT(*) BY language | SORT language"
 }
 
+# ES|QL: semantic match
 POST _query?format=txt
 {
   "query": "FROM food_labels_demo METADATA _score | WHERE MATCH(meaning, \"fresh dairy cheese\") | SORT _score DESC | KEEP product_name, language, _score | LIMIT 3"
 }
 
-# ---------------------------------------------------------------------------------------------------------
-# 8. Clean up when done.
+# Delete the demo index
 DELETE food_labels_demo

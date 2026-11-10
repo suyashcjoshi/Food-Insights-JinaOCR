@@ -1,29 +1,42 @@
-# Kibana demo: Dev Console and Discover
+# Kibana: Dev Console and Discover queries
 
-Every request here was run against an Elasticsearch Serverless project (Nov 2026) and returned 200.
-Paste the blocks into **Dev Tools → Console**. The ES|QL ones go in **Discover → ES|QL**.
+`docs/kibana-console.txt` has the Console requests in one file: paste it into **Dev Tools → Console** and run
+them in order. It uses an index called `food_labels_demo`, so it never touches the app's `food_labels`. This page
+explains them and has the Discover (ES|QL) queries for the app's real indices.
 
-**Want to paste and run?** Use `docs/kibana-console.txt`: one file, plain requests and `#` comments, real
-extracted text already in it, no editing. This page explains each step.
+Sample labels are Open Food Facts photos (data ODbL, images CC BY-SA). `docs/demo-label.png` is a small
+generated label used for the base64 example.
 
-Names: the app uses `food_labels` and `food_log`. The Console steps below use `food_labels_demo` so they
-never collide with the app's own index. Open Food Facts images: credit them on screen (ODbL data, CC BY-SA
-images).
+## What each request is
 
-## 1. Is the reader there?
+- **Inference API**: `GET _inference/_all`, `POST _inference/document_extraction/.jina-reader` (the OCR call).
+- **Index APIs**: `PUT` index (mapping), `PUT` document, `GET _mapping`, `DELETE`.
+- **Query DSL** (`_search`): `match` (words) and `semantic` (meaning).
+- **ES|QL**: `FROM`, `STATS ... BY`, `WHERE MATCH(...)`. Runs in Discover, or in Console with `POST _query`.
+
+## How the app uses them
+
+| App step | Code | Request |
+|---|---|---|
+| Read a photo | `eis.read` | `POST _inference/document_extraction/.jina-reader` |
+| Create the indices (first write) | `es.ensure_index` | `PUT food_labels` with the mapping |
+| Save a label | `es.index_doc` | index a document into `food_labels`, refreshed straight away |
+| Search the Library | `es._search` | `_search`: `multi_match` for words, `semantic` for meaning |
+| Library counts | `es._aggregate` | `_search` with nested and terms aggregations |
+| Add to today | `es.log_entry` | index a document into `food_log` |
+| Today's totals | `es.day_summary` | `_search` on `food_log`, term on `day`, sum aggregations |
+
+## 1. Check the reader
 
 ```
 GET _inference/_all
 ```
-Look for `"task_type": "document_extraction"` with `"inference_id": ".jina-reader"`. It is preconfigured,
-so there is nothing to create.
+Look for `"task_type": "document_extraction"` with `"inference_id": ".jina-reader"`. It is preconfigured.
 
-## 2. Extract: one call, image in, Markdown out
-
-By URL (easiest on screen; this is a German nutrition panel from Open Food Facts):
+## 2. Extract text from an image
 
 ```
-POST _inference/document_extraction/.jina-reader
+POST _inference/document_extraction/.jina-reader?filter_path=document_extraction.content
 {
   "input": [
     {
@@ -37,41 +50,18 @@ POST _inference/document_extraction/.jina-reader
   "task_settings": { "parameters": { "preset": "ocr" } }
 }
 ```
+The response has one item per input, in order: `content` (the Markdown), `format` and a `metadata` object that
+can change. `filter_path` keeps only `content`. Nothing is stored and there is no `usage`.
 
-To keep the response short on screen, add a filter to the path. It returns only the Markdown (tested with the
-preset above): `POST _inference/document_extraction/.jina-reader?filter_path=document_extraction.content`. Without
-it you also get `format` and a `metadata` object.
-
-With your own photo (what the app does): `format` is `base64` and `value` is a data URL. Build it in a
-terminal and paste it in:
-
+For a base64 image, set `"format": "base64"` and `"value": "data:image/png;base64,..."`. Build the string from
+a file with:
 ```bash
-echo "data:image/jpeg;base64,$(base64 -i data/kitchen/yogurt.jpg)" | pbcopy
+echo "data:image/jpeg;base64,$(base64 -i photo.jpg)" | pbcopy
 ```
-```
-POST _inference/document_extraction/.jina-reader
-{
-  "input": [
-    { "content": { "type": "image", "format": "base64", "value": "data:image/jpeg;base64,PASTE_HERE" } }
-  ],
-  "task_settings": { "parameters": { "preset": "ocr" } }
-}
-```
+Images already default to OCR, and the text was the same with and without the `ocr` preset; the app sends it
+explicitly. A scanned PDF (`"type": "pdf"`) with no text layer returns an empty result without it.
 
-What comes back (checked): `document_extraction` is an array, one item per input, in order. Each item has
-`content` (the Markdown), `format` and a `metadata` object that can change, so don't rely on it. There is no
-`usage` and nothing is stored. Other labels to try: the French one
-`.../611/124/672/1261/nutrition_fr.139.full.jpg` and the English dark chocolate one
-`.../304/692/002/9759/nutrition_en.546.full.jpg` (all under `https://images.openfoodfacts.org/images/products/`).
-
-The `task_settings.parameters.preset: "ocr"` line is what the app sends. Images already default to OCR and gave the
-same text with and without it when I compared (2 of 3 identical, the third 97.6% similar). A scanned PDF with no
-text layer needs the preset: the default call returned an empty result in my probe. Use `"type": "pdf"` for that.
-
-## 3. Store: the OCR call stores nothing, so create an index
-
-`semantic_text` is the only thing needed for search by meaning. No inference endpoint to create: on
-Serverless the default is `.jina-embeddings-v5-text-small`.
+## 3. Create an index and store the text
 
 ```
 PUT food_labels_demo
@@ -87,99 +77,76 @@ PUT food_labels_demo
   }
 }
 ```
-
-Index the Markdown you got back. Console accepts triple quotes, so paste it as is:
-
 ```
 PUT food_labels_demo/_doc/pesto-de?refresh=true
 {
   "product_name": "Pesto Rosso 200g",
   "language": "de",
   "source_url": "https://images.openfoodfacts.org/images/products/807/680/952/3547/nutrition_de.380.full.jpg",
-  "content": """PASTE THE MARKDOWN FROM STEP 2"""
+  "content": "<the Markdown from step 2, as one JSON string>"
 }
 ```
-Repeat for the French and English labels so the search has something to find.
+`content` is the text that words search reads. `copy_to` also feeds it into `meaning`, a `semantic_text` field.
+That needs no inference endpoint: on Serverless the default model is `.jina-embeddings-v5-text-small`
+(`GET food_labels_demo/_mapping` shows it), and Elasticsearch embeds the text when you index it. The console
+file indexes three labels (German, French, English) with real extracted text.
 
-Check the mapping resolved by itself:
-```
-GET food_labels_demo/_mapping
-```
-`meaning` shows `"inference_id": ".jina-embeddings-v5-text-small"`.
+## 4. Search: words or meaning
 
-## 4. Search
-
-By words. Only labels that contain the word match (a German label says "Zucker", not "sugar"):
-
+By words. It matches only labels that contain the word, so "sugar" finds nothing when a label prints "Zucker":
 ```
 POST food_labels_demo/_search
 {
-  "query": { "match": { "content": "sugar" } },
+  "query": { "match": { "content": "Zucker" } },
   "_source": ["product_name", "language"]
 }
 ```
 
-By meaning. Ranks every label by closeness, any language:
-
+By meaning. Same API, different query. It compares meaning, so an English question can find a French label:
 ```
 POST food_labels_demo/_search
 {
-  "query": { "semantic": { "field": "meaning", "query": "dark chocolate high in fat" } },
+  "query": { "semantic": { "field": "meaning", "query": "fresh dairy cheese" } },
   "_source": ["product_name", "language"]
 }
 ```
-In the test the dark chocolate label ranked first (0.73), then the French cheese (0.69), then the pesto (0.66).
-With only three labels the ranking says little; seed the 50 sample labels (`make seed`) for a better demo.
+Meaning search ranks every label by closeness and does not filter, so compare the scores. The app's default
+search is words (typo-tolerant, one language at a time); meaning is a checkbox in the Library.
 
-Clean up when done:
 ```
 DELETE food_labels_demo
 ```
 
 ## 5. Discover (ES|QL)
 
-Create a data view for `food_labels` if you want classic Discover; for ES|QL just pick **ES|QL** mode.
-These use the app's real indices (run a capture first).
+Another way to query the same data. In Discover, pick **ES|QL** mode and paste a query. These use the demo index
+from the console file; after you have scanned labels in the app, use `food_labels` instead.
 
-Latest labels, with the numbers the app parsed and how long the read took:
+List the labels:
+```
+FROM food_labels_demo
+| KEEP product_name, language
+| SORT product_name
+```
+
+Count the labels per language:
+```
+FROM food_labels_demo
+| STATS labels = COUNT(*) BY language
+```
+
+Search by meaning (`MATCH` on the `semantic_text` field runs the semantic query):
+```
+FROM food_labels_demo METADATA _score
+| WHERE MATCH(meaning, "fresh dairy cheese")
+| SORT _score DESC
+| KEEP product_name, language, _score
+| LIMIT 3
+```
+
+On the app's own indices, for example the newest labels:
 ```
 FROM food_labels
-| KEEP product_name, language, nutrients.energy_kcal, nutrients.carbohydrates_g, telemetry.ocr_ms, captured_at
 | SORT captured_at DESC
 | LIMIT 20
 ```
-
-Labels per language and the average read time:
-```
-FROM food_labels
-| STATS labels = COUNT(*), avg_ocr_ms = AVG(telemetry.ocr_ms) BY language
-```
-
-Search by meaning in ES|QL (same `semantic_text` field):
-```
-FROM food_labels METADATA _score
-| WHERE MATCH(meaning, "high protein snack")
-| SORT _score DESC
-| KEEP product_name, language, _score
-| LIMIT 5
-```
-
-What I ate today (change the date). This is the sum the Today tab shows:
-```
-FROM food_log
-| WHERE day == "2026-11-10"
-| STATS net_carbs_g = SUM(net_carbs_g), kcal = SUM(calories_kcal), entries = COUNT(*)
-```
-
-Classic query bar (KQL) on the `food_labels` data view, for example `language : "de"` or
-`telemetry.ocr_ms > 5000`.
-
-## Notes for the recording
-
-- Warm the endpoint before every take: the first call after idle can take minutes. A tiny image is enough.
-- Filter the response so it fits on screen: the Markdown in `content` is what matters. The `metadata` object
-  can change, so don't dwell on it.
-- Failure scene: the French Open Food Facts label (`611/124/672/1261`) came back starting with a Nutri-Score
-  commentary ("ce produit se situerait probablement en : Nutri-Score C"). Compare it with the photo before
-  you call it invented; if it is not on the pack, that is a ready-made example of why the app keeps such text
-  as "unverified".
