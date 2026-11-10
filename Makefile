@@ -1,4 +1,4 @@
-.PHONY: setup smoke fetch-sample score seed serve test lint
+.PHONY: setup smoke fetch-sample score seed serve test lint check-key
 
 setup:
 	uv sync
@@ -20,6 +20,9 @@ serve:
 
 test:
 	uv run pytest
+
+check-key:
+	uv run python scripts/check_key_privileges.py
 
 lint:
 	uv run ruff check . && uv run ruff format --check .

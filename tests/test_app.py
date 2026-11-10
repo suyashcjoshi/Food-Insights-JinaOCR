@@ -253,6 +253,20 @@ def test_retries_stop_at_the_deadline_and_ms_is_the_whole_wait(monkeypatch):
     assert call.status == 0
 
 
+def test_the_read_sends_the_ocr_preset_explicitly(monkeypatch):
+    sent = {}
+
+    def fake_request(method, path, body=None, **kwargs):
+        sent.update(body=body, path=path)
+        return fake_call()
+
+    monkeypatch.setattr(eis, "request", fake_request)
+    eis.read("data:image/jpeg;base64,AAAA")
+    assert sent["path"] == "/_inference/document_extraction/.jina-reader"
+    assert sent["body"]["task_settings"] == {"parameters": {"preset": "ocr"}}
+    assert sent["body"]["input"][0]["content"]["type"] == "image"
+
+
 def test_an_image_with_far_too_many_pixels_is_a_400(api, monkeypatch):
     def bomb(data, *a, **k):
         raise Image.DecompressionBombError("too big")

@@ -15,9 +15,9 @@ _COORDS = re.compile(r"\[\[\s*\d+(?:\s*,\s*\d+)*\s*\]\]")
 _ARTIFACT_LINE = re.compile(r"^\s*[A-Za-z_][\w-]*?\s*\[\[\s*\d+(?:\s*,\s*\d+)*\s*\]\]\s*$")
 _REF_TAGS = re.compile(r"<\|/?(?:ref|det|grounding)\|>")
 
-# Runaway guard. EIS rejects repetition_penalty / no_repeat_ngram_size, so a looping page can
-# only be bounded by max_completion_tokens and caught afterwards. The colleague measured the
-# distinct-5-gram ratio: runaway 0.006, lowest real prose 0.29, lowest real table 0.41.
+# Runaway guard. The reader takes no generation limits (no max tokens, no repetition settings), so a
+# looping page can only be caught afterwards. A colleague measured the distinct-5-gram ratio on model
+# output: runaway 0.006, lowest real prose 0.29, lowest real table 0.41.
 LOOP_MIN_DISTINCT = 0.10
 
 

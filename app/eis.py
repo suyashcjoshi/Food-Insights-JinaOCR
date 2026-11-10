@@ -152,9 +152,14 @@ def ocr_document_extraction(
     return call
 
 
+READ_PARAMETERS = {
+    "preset": "ocr"
+}  # sent explicitly: the docs name it, and a changed default cannot move us
+
+
 def read(image_data_url: str) -> Call:
     """Read one image into Markdown (the Extract step)."""
-    return ocr_document_extraction("image", image_data_url)
+    return ocr_document_extraction("image", image_data_url, parameters=READ_PARAMETERS)
 
 
 def warmup() -> float:

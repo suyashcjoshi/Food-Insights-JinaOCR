@@ -21,14 +21,14 @@ There is no barcode check and no "Verified" badge: both were removed on purpose.
   step, served as static files by FastAPI. No React, no Streamlit.
 - Tooling: `ruff` (lint+format), `pytest` for the parser and scoring code,
   `python-dotenv` for `.env`. A `Makefile` with `setup`, `smoke`,
-  `fetch-sample`, `score`, `seed`, `serve`, `test`, `lint`.
+  `fetch-sample`, `score`, `seed`, `serve`, `test`, `lint`, `check-key`.
 
 ## Layout
 
 ```
 app/            FastAPI app: eis.py, ocr.py, parse.py, naming.py, diary.py, allergens.py, es.py, pipeline.py, main.py
 web/            static frontend (phone-first): index.html, style.css, js/ (5 ES modules)
-scripts/        score.py, smoke_test.py, fetch_off_sample.py, seed_off.py, ui_screenshots.py
+scripts/        score.py, smoke_test.py, fetch_off_sample.py, seed_off.py, ui_screenshots.py, check_key_privileges.py
 tests/          pytest; fixtures/ holds real model output for the cases that broke the parser
 data/kitchen/   my own phone photos and their ground truth (committed; they are mine)
 data/off/       Open Food Facts sample (git-ignored; fetched by script; attribution kept)
@@ -46,9 +46,10 @@ already exist (`.jina-reader` for document_extraction), nothing to PUT.
 ## Rules that bite
 
 - Main read: `POST _inference/document_extraction/.jina-reader` (preview, Serverless). Body is
-  `{"input":[{"content":{"type":"image","format":"base64","value":"data:…"}}]}`; the answer is
+  `{"input":[{"content":{"type":"image","format":"base64","value":"data:…"}}],"task_settings":{"parameters":{"preset":"ocr"}}}`
+  (images already default to OCR; the preset is sent explicitly and gave the same text when tried); the answer is
   `document_extraction[0].content` Markdown. No prompt, no `usage` in the response. It stores nothing:
-  indexing is a separate call. `pdf` needs `task_settings.parameters.preset: "ocr"` when it has no text layer.
+  indexing is a separate call. a `pdf` with no text layer returns empty without that preset.
 - First call after idle can take 2–3 minutes (cold start). Use a 180 s client
   timeout in scripts; add a `warmup()` that sends a tiny image and ignores the
   result.

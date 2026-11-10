@@ -68,8 +68,6 @@
 <text x="890" y="258" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#009191" text-anchor="middle">photo</text>
 <line x1="978" y1="340" x2="802" y2="340" stroke="#009191" stroke-width="3" marker-end="url(#h-009191)"/>
 <text x="890" y="328" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#009191" text-anchor="middle">Markdown</text>
-<rect x="804.0" y="362" width="172" height="32" rx="16.0" fill="#FEC514"/>
-<text x="890" y="383.04" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="700" fill="#1C1E23" text-anchor="middle">≈ 3 s per read</text>
 <rect x="804.0" y="476" width="172" height="28" rx="14.0" fill="#0B64DD"/>
 <text x="890" y="494.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="12.5" font-weight="700" fill="#fff" text-anchor="middle">PUT /food_labels</text>
 <text x="890" y="526" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="11.5" font-weight="500" fill="#605F60" text-anchor="middle">one time only</text>

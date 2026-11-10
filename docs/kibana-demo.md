@@ -3,6 +3,9 @@
 Every request here was run against an Elasticsearch Serverless project (Nov 2026) and returned 200.
 Paste the blocks into **Dev Tools → Console**. The ES|QL ones go in **Discover → ES|QL**.
 
+**Want to paste and run?** Use `docs/kibana-console.txt`: one file, plain requests and `#` comments, real
+extracted text already in it, no editing. This page explains each step.
+
 Names: the app uses `food_labels` and `food_log`. The Console steps below use `food_labels_demo` so they
 never collide with the app's own index. Open Food Facts images: credit them on screen (ODbL data, CC BY-SA
 images).
@@ -30,9 +33,14 @@ POST _inference/document_extraction/.jina-reader
         "value": "https://images.openfoodfacts.org/images/products/807/680/952/3547/nutrition_de.380.full.jpg"
       }
     }
-  ]
+  ],
+  "task_settings": { "parameters": { "preset": "ocr" } }
 }
 ```
+
+To keep the response short on screen, add a filter to the path. It returns only the Markdown (tested with the
+preset above): `POST _inference/document_extraction/.jina-reader?filter_path=document_extraction.content`. Without
+it you also get `format` and a `metadata` object.
 
 With your own photo (what the app does): `format` is `base64` and `value` is a data URL. Build it in a
 terminal and paste it in:
@@ -45,7 +53,8 @@ POST _inference/document_extraction/.jina-reader
 {
   "input": [
     { "content": { "type": "image", "format": "base64", "value": "data:image/jpeg;base64,PASTE_HERE" } }
-  ]
+  ],
+  "task_settings": { "parameters": { "preset": "ocr" } }
 }
 ```
 
@@ -55,8 +64,9 @@ What comes back (checked): `document_extraction` is an array, one item per input
 `.../611/124/672/1261/nutrition_fr.139.full.jpg` and the English dark chocolate one
 `.../304/692/002/9759/nutrition_en.546.full.jpg` (all under `https://images.openfoodfacts.org/images/products/`).
 
-Scanned PDF instead of an image (not run here; from the docs page): `"type": "pdf"` plus
-`"task_settings": { "parameters": { "preset": "ocr" } }`.
+The `task_settings.parameters.preset: "ocr"` line is what the app sends. Images already default to OCR and gave the
+same text with and without it when I compared (2 of 3 identical, the third 97.6% similar). A scanned PDF with no
+text layer needs the preset: the default call returned an empty result in my probe. Use `"type": "pdf"` for that.
 
 ## 3. Store: the OCR call stores nothing, so create an index
 

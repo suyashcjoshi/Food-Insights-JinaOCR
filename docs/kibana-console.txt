@@ -1,0 +1,114 @@
+# Kibana Dev Tools > Console. Paste the whole file and run each request with the green arrow, top to bottom.
+# Lines starting with # are comments. Every request below was run against an Elasticsearch Serverless project.
+# Labels: Open Food Facts product photos (data ODbL, images CC BY-SA). The text below is real output of the
+# document_extraction call, so no editing is needed.
+
+# ---------------------------------------------------------------------------------------------------------
+# 1. Is the reader there? Look for task_type document_extraction, inference_id .jina-reader. Nothing to create.
+GET _inference/_all
+
+# ---------------------------------------------------------------------------------------------------------
+# 2. Extract: one call, image in, Markdown out. The filter keeps the response short (content only).
+POST _inference/document_extraction/.jina-reader?filter_path=document_extraction.content
+{
+  "input": [
+    {
+      "content": {
+        "type": "image",
+        "format": "url",
+        "value": "https://images.openfoodfacts.org/images/products/807/680/952/3547/nutrition_de.380.full.jpg"
+      }
+    }
+  ],
+  "task_settings": { "parameters": { "preset": "ocr" } }
+}
+
+# ---------------------------------------------------------------------------------------------------------
+# 3. The call stores nothing, so create an index. semantic_text needs no inference endpoint: on Serverless the
+#    default is .jina-embeddings-v5-text-small. copy_to feeds the label text into it.
+PUT food_labels_demo
+{
+  "mappings": {
+    "properties": {
+      "product_name": { "type": "text" },
+      "language":     { "type": "keyword" },
+      "source_url":   { "type": "keyword" },
+      "content":      { "type": "text", "copy_to": "meaning" },
+      "meaning":      { "type": "semantic_text" }
+    }
+  }
+}
+
+# 4. Index three labels (German, French, English): the Markdown the reader returned, as one-line JSON strings.
+PUT food_labels_demo/_doc/pesto-de?refresh=true
+{
+  "product_name": "Pesto Rosso 200g",
+  "language": "de",
+  "source_url": "https://images.openfoodfacts.org/images/products/807/680/952/3547/nutrition_de.380.full.jpg",
+  "content": "# Nährwertdeklaration\n\n|  | g | 100 |\n| --- | --- | --- |\n| Energie | kJ | 1360 |\n|  | kcal | 329 |\n| Fett | g | 29 |\n| davon: gesättigte |\n| Fettsäuren | g | 3,4 |\n| Kohlenhydrate | g | 12 |\n| davon: Zucker | g | 7,8 |\n| Ballaststoffe | g | 2,3 |\n| Eiweiß | -g | 3,8 |\n| Salz | g | 2,8 |\n\n## GLUTENFREI\n\nBarilla G. e R. Fratelli - Società per Azioni, Via Mantova 166, 43122 Parma (Italien).\n\n[www.barilla.com](http://www.barilla.com/)"
+}
+
+PUT food_labels_demo/_doc/fromage-fr?refresh=true
+{
+  "product_name": "Fromage Blanc Nature",
+  "language": "fr",
+  "source_url": "https://images.openfoodfacts.org/images/products/611/124/672/1261/nutrition_fr.139.full.jpg",
+  "content": "# Code Couleur & Nutri-Score\n\nD'après ses valeurs (159 kcal et 11g de lipides), ce produit se situerait probablement en :\n\n- **Nutri-Score : C**\n- **Code Couleur : Jaune / Orange clair**\n\nPourquoi ? Bien qu'il soit \"nature\", sa teneur élevée en **matières grasses** (11g) et l'ajout d'amidon et d'épaississants font monter l'apport calorique par rapport à un fromage blanc classique à 3% de MG (qui tourne autour de 70-80 kcal)."
+}
+
+PUT food_labels_demo/_doc/chocolat-en?refresh=true
+{
+  "product_name": "Excellence Noir Prodigieux 90% Cacao",
+  "language": "en",
+  "source_url": "https://images.openfoodfacts.org/images/products/304/692/002/9759/nutrition_en.546.full.jpg",
+  "content": "| NUTRITION INFORMATION PER 100g: |\n| --- |\n| Energi / Energiaa / Energi / Energi / Wartość energetyczna | 2483 kJ / 592 kcal |\n| Fett / Rasvaa / Fedt / Fett / Tłuszcz | 55 g |\n| - varav mättat fett / josta tyydyttynyttä rasvaa / heraf mættede fedtsyrer / hvorav mettet fett / w tym kwasy tłuszczowe nasycone | 30 g |\n| Kolhydrater/ Hiilihydraattia / Kulhydrater / Karbohydrater / Węglowodany | 14 g |\n| - varav sockerarter / josta sokereita / heraf sukkerarter / hvorav sukkerarter / w tym cukry | 7,0 g |\n| Protein / Proteiinia / Protein / Protein / Białko | 10 g |\n| Salt / Suolaa / Salt / Salt / Sól | 0,03 g |\n\nQUALITY GUARANTEE CHOCOLADEFABRIKEN LINDT & SPRONGLI AG\n\nDistribueras av / Markkinoija /"
+}
+
+# meaning should show "inference_id": ".jina-embeddings-v5-text-small"
+GET food_labels_demo/_mapping
+
+# ---------------------------------------------------------------------------------------------------------
+# 5. Search by words. Only labels that contain the word match. No label prints "sugar": the German one says Zucker.
+POST food_labels_demo/_search
+{
+  "query": { "match": { "content": "sugar" } },
+  "_source": ["product_name", "language"]
+}
+
+# Now the word as the German label prints it: one hit.
+POST food_labels_demo/_search
+{
+  "query": { "match": { "content": "Zucker" } },
+  "_source": ["product_name", "language"]
+}
+
+# ---------------------------------------------------------------------------------------------------------
+# 6. Search by meaning. Same search API, only the query changes. An English question ranks the French label first.
+#    It ranks every label by closeness (it does not filter), so read the scores.
+POST food_labels_demo/_search
+{
+  "query": { "semantic": { "field": "meaning", "query": "fresh dairy cheese" } },
+  "_source": ["product_name", "language"]
+}
+
+POST food_labels_demo/_search
+{
+  "query": { "semantic": { "field": "meaning", "query": "dark chocolate high in fat" } },
+  "_source": ["product_name", "language"]
+}
+
+# ---------------------------------------------------------------------------------------------------------
+# 7. The same data with ES|QL (in Discover, pick ES|QL mode and paste only the query text).
+POST _query?format=txt
+{
+  "query": "FROM food_labels_demo | STATS labels = COUNT(*) BY language | SORT language"
+}
+
+POST _query?format=txt
+{
+  "query": "FROM food_labels_demo METADATA _score | WHERE MATCH(meaning, \"fresh dairy cheese\") | SORT _score DESC | KEEP product_name, language, _score | LIMIT 3"
+}
+
+# ---------------------------------------------------------------------------------------------------------
+# 8. Clean up when done.
+DELETE food_labels_demo

@@ -1,8 +1,8 @@
 # Food Insights with Elastic Inference Service (Jina OCR)
 
 Take a photo of a food label. The app reads the nutrition numbers, adds them up against your own daily
-limits, and saves them so you can search later, for example "every product that mentions peanuts, in any
-language". It reads and adds up. It never gives advice.
+limits, and saves them so you can search later, for example "every product that mentions peanuts". It reads
+and adds up. It never gives advice.
 
 <p align="center"><img src="docs/architecture.svg" alt="Architecture: web front end, FastAPI app, Jina OCR on Elastic Inference Service, Elasticsearch Serverless" width="100%"></p>
 
@@ -14,9 +14,11 @@ language". It reads and adds up. It never gives advice.
    Jina OCR does the reading (preview on Elasticsearch Serverless).
 2. **Ingest**: the app pulls the numbers out and saves one document per label (`food_labels`) and one entry
    per thing you eat (`food_log`).
-3. **Search**: find labels by words, or by meaning with **Search by meaning** ticked. Meaning search uses a
-   `semantic_text` field: Elasticsearch embeds the text itself (on Serverless, with
-   `.jina-embeddings-v5-text-small`). So "sweet breakfast spread" finds a French *pâte à tartiner* label.
+3. **Search**: by default the search matches words only (typo-tolerant, but "peanuts" will not find
+   "cacahuètes"). Tick **Search by meaning** to search across languages: it uses a `semantic_text` field, which
+   Elasticsearch embeds itself (on Serverless, with `.jina-embeddings-v5-text-small`), so "sweet breakfast
+   spread" finds a French *pâte à tartiner* label. It ranks results and does not filter them. The allergen filter
+   also matches allergen names in several languages.
 
 The app is built for a phone, with three tabs: **Capture** (a front photo for the name, a back photo for the
 nutrition panel), **Today** (net carbs and calories against limits you set) and **Library** (search, allergen
@@ -41,7 +43,7 @@ The Library photos are Open Food Facts samples.
 - **Your limits stay in your browser.** The app only says "over" or "under". It is a demo, not medical advice.
 
 I tried it on 50 Open Food Facts photos in 7 languages: 64% of the values match the database (58% for
-carbohydrates), with a median read of 3.1 s. French was the weakest (41%).
+carbohydrates). French was the weakest (41%).
 
 ## Run it
 
@@ -51,11 +53,15 @@ make setup               # install (uses uv)
 make fetch-sample        # optional: download the 50 sample photos (needs OFF_USER_AGENT in .env)
 make seed                # optional: read them into the Library (50 reads)
 make serve               # open http://127.0.0.1:8000
+make check-key           # optional: shows which actions your API key is allowed to do
 make test                # tests, no network needed
 ```
 
 This is a demo with no login: run it on your own machine and don't expose it to the internet, because
-every page load and every photo makes a paid call to the model. Your project needs the `.jina-reader` endpoint. The first read after a quiet period can take a few minutes
+every page load and every photo makes a paid call to the model. Your project needs the `.jina-reader` endpoint. The key a new project gives you is unrestricted. A restricted key that works (tested
+with `make check-key`) needs the cluster privilege `monitor_inference`, and on `food_labels` and `food_log` the
+index privileges `create_index`, `index`, `read`, `write`, `view_index_metadata` and `maintenance` (writes refresh
+the index straight away). `make check-key` tells you what a key is missing. The first read after a quiet period can take a few minutes
 while the model wakes up. The two indices are created on first use; an index from an older version has no
 `meaning` field, so delete it and it is recreated.
 
