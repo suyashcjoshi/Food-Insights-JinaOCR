@@ -10,8 +10,7 @@ from __future__ import annotations
 import re
 
 # Region tokens such as `image[[24,35,975,975]]` or `<|ref|>…<|/ref|>` leak out of the model,
-# especially with the grounded prompt. Strip the coordinate group; drop a line only when it is
-# nothing but a label plus a box.
+# now and then. Strip the coordinate group; drop a line only when it is nothing but a label plus a box.
 _COORDS = re.compile(r"\[\[\s*\d+(?:\s*,\s*\d+)*\s*\]\]")
 _ARTIFACT_LINE = re.compile(r"^\s*[A-Za-z_][\w-]*?\s*\[\[\s*\d+(?:\s*,\s*\d+)*\s*\]\]\s*$")
 _REF_TAGS = re.compile(r"<\|/?(?:ref|det|grounding)\|>")

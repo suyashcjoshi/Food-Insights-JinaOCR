@@ -109,7 +109,7 @@ async function postCapture() {
   }
   const body = await response.json().catch(() => ({}));
   if (response.ok) return body;
-  if (body.error === "ocr_failed") throw new Error(MESSAGES.modelDown);
+  if (body.error === "ocr_failed" || response.status === 502) throw new Error(MESSAGES.modelDown);
   if (response.status === 400) throw new Error(MESSAGES.notAnImage);
   throw new Error(MESSAGES.other);
 }

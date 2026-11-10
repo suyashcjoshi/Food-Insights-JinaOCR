@@ -26,6 +26,9 @@ load_dotenv()
 TIMEOUT_S = 180  # cold start can take 2-3 minutes
 RETRY_STATUS = {429, 502, 503, 504}
 BACKOFF_S = (5, 15, 30)  # seconds to wait before retry 1, 2, 3+
+DEADLINE_S = (
+    400  # stop retrying when another attempt could run past this (4 timeouts = ~13 minutes)
+)
 SHORTEN_ABOVE = 120  # request strings longer than this (base64 images) are cut in reports
 SHORTEN_TO = 60
 
@@ -67,6 +70,7 @@ class Call:
     text: str = ""  # the extracted Markdown
     body: dict | None = None  # the parsed JSON response
     raw: str = ""  # the response text as received
+    attempts: int = 1  # how many tries it took; `ms` is the wall time of all of them
 
     @property
     def ok(self) -> bool:
@@ -85,10 +89,12 @@ def _shorten(obj):
 
 
 def _record(
-    started: float, method: str, path: str, body: dict | None, status: int, raw: str
+    started: float, method: str, path: str, body: dict | None, status: int, raw: str, attempts: int
 ) -> Call:
-    """A `Call` for a response (or, with status 0, a transport failure) that took until now."""
-    return Call(status, int((time.time() - started) * 1000), method, path, _shorten(body), raw=raw)
+    """A `Call` for a response (or, with status 0, a transport failure). `started` is a
+    `time.monotonic()` reading taken before the first attempt, so `ms` is what the caller waited."""
+    ms = int((time.monotonic() - started) * 1000)
+    return Call(status, ms, method, path, _shorten(body), raw=raw, attempts=attempts)
 
 
 def request(method: str, path: str, body: dict | None = None, retries: int = 4) -> Call:
@@ -97,19 +103,23 @@ def request(method: str, path: str, body: dict | None = None, retries: int = 4) 
     Returns the final response even when it is an error status, so probes can record it.
     """
     last: Call | None = None
+    started = time.monotonic()
     for attempt in range(retries):
-        started = time.time()
+        n = attempt + 1
         try:
             r = client().request(method, path, json=body)
-            last = _record(started, method, path, body, r.status_code, r.text)
+            last = _record(started, method, path, body, r.status_code, r.text, n)
             if r.status_code not in RETRY_STATUS:
                 return last
         except httpx.ConnectError as e:
             raise RuntimeError(f"cannot reach Elasticsearch: {e}") from e
         except httpx.TransportError as e:  # read timeout, dropped connection
-            last = _record(started, method, path, body, 0, f"{type(e).__name__}: {e}")
+            last = _record(started, method, path, body, 0, f"{type(e).__name__}: {e}", n)
         if attempt < retries - 1:
-            time.sleep(BACKOFF_S[min(attempt, len(BACKOFF_S) - 1)])
+            wait = BACKOFF_S[min(attempt, len(BACKOFF_S) - 1)]
+            if time.monotonic() - started + wait + TIMEOUT_S > DEADLINE_S:
+                break  # another full attempt could run past the deadline: return what we have
+            time.sleep(wait)
     assert last is not None
     return last
 
@@ -150,7 +160,7 @@ def read(image_data_url: str) -> Call:
 def warmup() -> float:
     """Send a tiny image and ignore the outcome. Returns seconds spent. Never raises."""
     url = to_data_url(Image.new("RGB", (32, 32), "white"), "PNG")
-    started = time.time()
+    started = time.monotonic()
     with contextlib.suppress(Exception):
         read(url)
-    return time.time() - started
+    return time.monotonic() - started

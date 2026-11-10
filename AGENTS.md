@@ -73,8 +73,8 @@ already exist (`.jina-reader` for document_extraction), nothing to PUT.
 - Net carbs subtract fibre ONLY when the printed carbohydrate includes it (US / Canada "Total Carbohydrate"
   panels, found by `parse.py` as `carb_includes_fibre`). EU / UK "Carbohydrate" already excludes fibre (EU
   Regulation 1169/2011), so subtracting it again undercounts. Unknown format, or US-style with no fibre figure:
-  count the full carbohydrate and say so. Never below 0. The rule lives in `app/diary.py` (mirrored in
-  `web/js/util.js` for display): change both, and the tests.
+  count the full carbohydrate and say so. Fibre printed as `<0.5g` counts as 0 (flag `trace:fiber_g`). Never below 0. The rule lives in `app/diary.py` (mirrored in
+  `web/js/util.js` for display, rounding halves up like `Math.round`): change both, and the tests.
 - Quantity has no grams input, but "1 portion" is always spelled out (`portion_unit`: "100 g", "serving (170 g)",
   "the panel as printed") so it is never mistaken for "1 bar".
 - A log entry is a snapshot (label numbers × portions); hand edits are stored in `edited_fields`, never

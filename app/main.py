@@ -9,6 +9,7 @@ Limits are the person's own and live in the browser.
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 from typing import Annotated
 
@@ -25,6 +26,8 @@ MAX_UPLOAD = 15 * 1024 * 1024
 MAX_NAME_CHARS = 200
 OCR_ERROR_DETAIL_CHARS = 400  # how much of the service's error body goes back to the page
 ERROR_DETAIL_CHARS = 200
+WARMUP_GAP_S = 300  # each warmup is a paid model call: at most one per five minutes
+_last_warmup: float | None = None
 
 app = FastAPI(title="Food Insights", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
@@ -37,6 +40,14 @@ def _check_kind(kind: str | None) -> None:
 def _clean(value: str | None) -> str | None:
     """Trimmed text, or None when empty (a blank form field means "not given")."""
     return (value or "").strip() or None
+
+
+async def _es(fn, *args, what: str):
+    """Run a blocking Elasticsearch call; any failure becomes a 503, like search and today do."""
+    try:
+        return await asyncio.to_thread(fn, *args)
+    except Exception as exc:
+        raise HTTPException(503, f"{what} unavailable: {str(exc)[:ERROR_DETAIL_CHARS]}") from exc
 
 
 def _ocr_failed(call: eis.Call) -> JSONResponse:
@@ -73,7 +84,13 @@ def health() -> dict:
 
 @app.post("/api/warmup")
 async def warmup() -> dict:
-    """First call after idle can take 2-3 minutes; the UI fires this on load and ignores the result."""
+    """First call after idle can take 2-3 minutes; the UI fires this on load and ignores the result.
+    Every page load asks, so repeats within `WARMUP_GAP_S` are skipped (no model call)."""
+    global _last_warmup
+    now = time.monotonic()
+    if _last_warmup is not None and now - _last_warmup < WARMUP_GAP_S:
+        return {"seconds": 0.0, "skipped": True}
+    _last_warmup = now  # set before the slow call, so several tabs opening at once warm up once
     seconds = await asyncio.to_thread(eis.warmup)
     return {"seconds": round(seconds, 1)}
 
@@ -102,10 +119,18 @@ async def capture(
             product_name=_clean(product_name),
             source=source,
         )
-    except OSError as exc:  # Pillow could not open the file
+    except pipeline.BadImage as exc:  # not an image, truncated, or far too many pixels
         raise HTTPException(400, f"not an image: {exc}") from exc
-    except pipeline.OcrError as exc:
+    except pipeline.OcrError as exc:  # EIS answered with an error status
         return _ocr_failed(exc.call)
+    except RuntimeError as exc:  # EIS could not be reached at all
+        raise HTTPException(
+            502, f"cannot reach the model: {str(exc)[:ERROR_DETAIL_CHARS]}"
+        ) from exc
+    except OSError as exc:  # the photo was fine but could not be saved
+        raise HTTPException(
+            500, f"could not save the photo: {str(exc)[:ERROR_DETAIL_CHARS]}"
+        ) from exc
     result["indexed"] = await _save(result["doc"]) if index else {"ok": False, "skipped": True}
     result["image_url"] = "/" + result["doc"]["image_path"]
     return JSONResponse(result)
@@ -150,7 +175,7 @@ async def aggs(
 
 @app.get("/api/doc/{doc_id}")
 async def doc(doc_id: str) -> dict:
-    found = await asyncio.to_thread(es.get_doc, doc_id)
+    found = await _es(es.get_doc, doc_id, what="library")
     if found is None:
         raise HTTPException(404, "no such capture")
     return found
@@ -202,7 +227,7 @@ def _edits(patch: DocPatch) -> dict:
 async def patch_doc(doc_id: str, patch: DocPatch) -> dict:
     """Edit name, language, or the carbohydrate / fibre / calorie numbers (marked as edited by hand)."""
     updates = _edits(patch)
-    found = await asyncio.to_thread(es.get_doc, doc_id)
+    found = await _es(es.get_doc, doc_id, what="library")
     if found is None:
         raise HTTPException(404, "no such capture")
     if patch.nutrients:
@@ -210,7 +235,7 @@ async def patch_doc(doc_id: str, patch: DocPatch) -> dict:
         updates["nutrients"] = nutrients
         updates["edited_fields"] = sorted({*found.get("edited_fields", []), *edited})
     if updates:
-        await asyncio.to_thread(es.update_doc, doc_id, updates)
+        await _es(es.update_doc, doc_id, updates, what="library")
     merged = {**found, **updates}
     return {k: merged.get(k) for k in ("product_name", "language", "nutrients", "edited_fields")}
 
@@ -237,11 +262,11 @@ async def add_to_today(entry_in: LogIn) -> dict:
         raise HTTPException(
             400, f"portions must be between {diary.MIN_PORTIONS} and {diary.MAX_PORTIONS}"
         )
-    label = await asyncio.to_thread(es.get_doc, entry_in.label_id)
+    label = await _es(es.get_doc, entry_in.label_id, what="library")
     if label is None:
         raise HTTPException(404, "no such label")
     entry = diary.entry_from_label(label, entry_in.portions, entry_in.day)
-    await asyncio.to_thread(es.log_entry, entry)
+    await _es(es.log_entry, entry, what="log")
     return entry
 
 
@@ -256,7 +281,7 @@ async def today(day: str) -> dict:
 
 @app.delete("/api/log/{entry_id}")
 async def remove_entry(entry_id: str) -> dict:
-    if not await asyncio.to_thread(es.delete_log_entry, entry_id):
+    if not await _es(es.delete_log_entry, entry_id, what="log"):
         raise HTTPException(404, "no such entry")
     return {"removed": entry_id}
 

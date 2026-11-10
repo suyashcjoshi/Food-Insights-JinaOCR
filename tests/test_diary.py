@@ -110,3 +110,17 @@ def test_an_eu_per_100g_panel_is_recognised_as_excluding_fibre():
 
 def test_text_with_no_panel_is_unknown():
     assert parse("Fresh apples, 1 kg, grown in Kent.").carb_includes_fibre is None
+
+
+def test_rounding_matches_the_page_on_exact_halves():
+    # Python's round(2.25, 1) is 2.2; the page (Math.round) shows 2.3, and the saved entry must agree
+    assert diary.round_half_up(2.25, 1) == 2.3 and diary.round_half_up(2.5) == 3
+    label = {
+        "id": "x",
+        "nutrients": {"carbohydrates_g": 4.5, "carb_includes_fibre": False, "basis": "100g"},
+    }
+    assert diary.entry_from_label(label, 0.5, "2026-11-10")["net_carbs_g"] == 2.3
+
+
+def test_the_portion_minimum_matches_the_stepper_on_the_page():
+    assert diary.MIN_PORTIONS == 0.5

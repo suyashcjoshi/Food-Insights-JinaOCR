@@ -138,9 +138,14 @@ PER_100 = re.compile(
     re.IGNORECASE,
 )
 PER_SERVING = re.compile(
-    r"serving|portion|por[cç][aã]o|ra[cç][aã]o|raci[oó]n|cup|tasse", re.IGNORECASE
+    r"\b(?:serving|portion|por[cç][aã]o|ra[cç][aã]o|raci[oó]n|cup|tasse)(?:e?s)?\b", re.IGNORECASE
 )
 SERVING_RE = re.compile(r"serving size\s*:?\s*(.+)$", re.IGNORECASE)
+SERVING_SIZE_LINE = re.compile(
+    r"^\W*serving size\b", re.IGNORECASE
+)  # `Serving size 100g` is not a header
+# a value printed as `<0.5g` / `less than 0.5g`: the figure is a ceiling, not a measurement
+TRACE_BEFORE = re.compile(r"(?:<|less\s+than)\s*$", re.IGNORECASE)
 # the per-100 column header, and the value-column headers that can stand left of it
 COL100_RE = re.compile(r"(?<![\d.,])100\s*(?:g|gr|ml)(?![a-z])", re.IGNORECASE)
 COLUMN_HEADER_RE = re.compile(
@@ -191,7 +196,7 @@ class ParseResult:
     nutrients: dict[str, float] = field(default_factory=dict)
     energy_kj: float | None = None
     serving_text: str | None = None
-    per: str = "serving"
+    per: str = "unknown"  # 100g | serving | unknown (follows `basis`)
     basis: str = "unknown"  # 100g | 100ml | serving | unknown
     column: int | None = None  # index of the 100 g / 100 ml value column, None if no such header
     width: int | None = None  # value columns named in the header
@@ -205,6 +210,7 @@ class ParseResult:
     # Does the printed "carbohydrate" already include fibre? US / Canada "Total Carbohydrate": yes.
     # EU / UK "Carbohydrate" (per 100 g): no, fibre is listed separately. None: cannot tell.
     carb_includes_fibre: bool | None = None
+    trace: list[str] = field(default_factory=list)  # nutrients printed as `<x`; see `_scan_line`
 
     @property
     def panel_found(self) -> bool:
@@ -225,6 +231,7 @@ class ParseResult:
         out += ["no_panel"] if not self.panel_found else []
         out += ["aligned"] if self.aligned else []
         out += ["column_swapped"] if self.column_swapped else []
+        out += [f"trace:{name}" for name in self.trace]
         return out + (["parse_suspect", *self.suspect_reasons] if self.parse_suspect else [])
 
     @property
@@ -449,7 +456,12 @@ def _scan_line(ln: str, res: ParseResult) -> None:
                 continue
             unit = _token_unit(toks, idx, ln[m.end() :])
             if unit in TO_GRAMS:  # gram/mg values always print a unit; skip a bare number
-                res.nutrients[name] = _convert(_to_float(toks[idx].group("num")), unit, name)
+                value = _convert(_to_float(toks[idx].group("num")), unit, name)
+                if name == "fiber_g" and TRACE_BEFORE.search(ln[:pos]):
+                    # `<0.5g` fibre: subtracting the ceiling would undercount net carbs, so count none
+                    value = 0.0
+                    res.trace.append(name)
+                res.nutrients[name] = value
                 claimed.add(pos)
 
 
@@ -770,7 +782,8 @@ def _sort_lines(
         if res.serving_text is None and (m := SERVING_RE.search(ln)):
             res.serving_text = m.group(1).strip()
         ln = fold(ln)
-        _find_column(ln, res, force_column)
+        if not SERVING_SIZE_LINE.match(ln):
+            _find_column(ln, res, force_column)
         if pending:
             ln, pending = f"{pending} {ln}", ""
         if _ends_with_label(ln):
@@ -811,7 +824,7 @@ def _set_basis(res: ParseResult, md: str) -> None:
             res.basis = "100ml" if "ml" in first_100.group().lower() else "100g"
         elif first_serving:
             res.basis = "serving"
-    res.per = "100g" if res.basis.startswith("100") else "serving"
+    res.per = "100g" if res.basis.startswith("100") else res.basis
 
 
 # US / Canada panels print "Total Carbohydrate" with "Dietary Fiber" inside it.
@@ -863,5 +876,8 @@ def parse(md: str, *, force_column: int | None = None) -> ParseResult:
     _set_basis(res, md)
     res.carb_includes_fibre = _carb_includes_fibre(md, res.basis)
     _align(rows, res)
+    for name in res.trace:  # after alignment, which may have re-read the `<0.5` figure as 0.5
+        if name in res.nutrients:
+            res.nutrients[name] = 0.0
     _check_consistency(res)
     return res

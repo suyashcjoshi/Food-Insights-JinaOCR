@@ -10,7 +10,7 @@ FIX = Path(__file__).parent / "fixtures"
 TRUTH = json.loads((ROOT / "data" / "kitchen" / "yogurt.truth.json").read_text())
 
 
-@pytest.mark.parametrize("fixture", ["yogurt_official.md", "yogurt_grounded.md"])
+@pytest.mark.parametrize("fixture", ["yogurt_official.md", "yogurt_table_output.md"])
 def test_yogurt_panel_matches_truth(fixture):
     """One-line output and HTML-table output both give every panel value in the truth file."""
     res = parse((FIX / fixture).read_text())
@@ -207,3 +207,34 @@ def test_kcal_glued_to_number_and_diaeresis_label():
         "carbohydrates_g": 9.4,
         "fat_g": 3.0,
     }
+
+
+US_BAR = (
+    "Nutrition Facts\nServing size {size}\nCalories 190\nTotal Fat 8g\n"
+    "Total Carbohydrate 22g 8%\nDietary Fiber {fibre}\nProtein 5g\n"
+)
+
+
+def test_a_serving_size_of_100g_is_not_the_per_100_column_header():
+    res = parse(US_BAR.format(size="100g", fibre="3g"))
+    assert res.nutrients["carbohydrates_g"] == 22 and res.nutrients["fiber_g"] == 3
+    assert res.basis == "serving" and res.serving_text == "100g"
+
+
+@pytest.mark.parametrize("printed", ["<0.5g", "less than 0.5g"])
+def test_trace_fibre_counts_as_none_so_net_carbs_are_not_undercounted(printed):
+    res = parse(US_BAR.format(size="1 bar (40g)", fibre=printed))
+    assert res.nutrients["fiber_g"] == 0.0 and "trace:fiber_g" in res.flags
+    assert parse(US_BAR.format(size="1 bar (40g)", fibre="1g")).nutrients["fiber_g"] == 1
+
+
+def test_per_follows_basis_and_is_unknown_when_nothing_says_which():
+    res = parse("Energy 250 kcal\nProtein 6 g\nTotal Carbohydrate 27 g\n")
+    assert res.basis == "unknown" and res.per == "unknown"
+
+
+def test_serving_words_need_word_boundaries():
+    from app.parse import PER_SERVING
+
+    assert not PER_SERVING.search("chocolate cupcake mix")
+    assert PER_SERVING.search("1 cup") and PER_SERVING.search("Por 2 raciones")

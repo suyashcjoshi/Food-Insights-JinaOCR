@@ -66,7 +66,7 @@ MAPPING = {
                 "carb_includes_fibre": {
                     "type": "boolean"
                 },  # US-style panel: yes; EU / UK per 100 g: no
-                "per": {"type": "keyword"},  # serving | 100g
+                "per": {"type": "keyword"},  # 100g | serving | unknown
                 "basis": {"type": "keyword"},  # 100g | 100ml | serving | unknown
             }
         },

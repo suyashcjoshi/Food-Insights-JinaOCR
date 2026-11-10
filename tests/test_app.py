@@ -218,6 +218,113 @@ def test_capture_reports_an_eis_failure_as_502(api, monkeypatch):
     assert r.json()["error"] == "ocr_failed" and r.json()["status"] == 503
 
 
+def post_with_front(api, front: bytes):
+    files = {"image": ("l.jpg", jpeg(), "image/jpeg"), "front": ("f.jpg", front, "image/jpeg")}
+    return api.post("/api/capture", files=files)
+
+
+def test_warmup_is_throttled_so_page_loads_do_not_each_cost_a_model_call(api, monkeypatch):
+    calls = []
+    monkeypatch.setattr(main, "_last_warmup", None)
+    monkeypatch.setattr(eis, "warmup", lambda: calls.append(1) or 2.0)
+    assert api.post("/api/warmup").json() == {"seconds": 2.0}
+    assert api.post("/api/warmup").json() == {"seconds": 0.0, "skipped": True}
+    assert len(calls) == 1
+    monkeypatch.setattr(main, "_last_warmup", main.time.monotonic() - main.WARMUP_GAP_S - 1)
+    assert api.post("/api/warmup").json()["seconds"] == 2.0 and len(calls) == 2
+
+
+def test_retries_stop_at_the_deadline_and_ms_is_the_whole_wait(monkeypatch):
+    clock = {"t": 0.0}
+    monkeypatch.setattr(eis.time, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(eis.time, "sleep", lambda s: clock.__setitem__("t", clock["t"] + s))
+    attempts = []
+
+    class Slow:
+        def request(self, *a, **k):
+            attempts.append(1)
+            clock["t"] += eis.TIMEOUT_S  # every attempt runs into the timeout
+            raise eis.httpx.ReadTimeout("slow")
+
+    monkeypatch.setattr(eis, "client", lambda: Slow())
+    call = eis.request("POST", "/_inference/x", {})
+    assert len(attempts) == 2 and call.attempts == 2  # a third could pass DEADLINE_S
+    assert call.ms == int(clock["t"] * 1000) and clock["t"] <= eis.DEADLINE_S
+    assert call.status == 0
+
+
+def test_an_image_with_far_too_many_pixels_is_a_400(api, monkeypatch):
+    def bomb(data, *a, **k):
+        raise Image.DecompressionBombError("too big")
+
+    monkeypatch.setattr(pipeline, "prepare_bytes", bomb)
+    r = post(api)
+    assert r.status_code == 400 and "too many pixels" in r.json()["detail"]
+
+
+def test_capture_reports_an_unreachable_eis_as_502(api, monkeypatch):
+    def down(url):
+        raise RuntimeError("cannot reach Elasticsearch: boom")
+
+    monkeypatch.setattr(eis, "read", down)
+    r = post(api)
+    assert r.status_code == 502 and "cannot reach" in r.json()["detail"]
+
+
+def test_a_disk_write_failure_is_not_reported_as_a_bad_image(api, monkeypatch, tmp_path):
+    (tmp_path / "file").write_text("x")
+    monkeypatch.setattr(pipeline, "CAPTURES", tmp_path / "file" / "sub")  # mkdir under a file fails
+    r = post(api)
+    assert r.status_code == 500 and "could not save" in r.json()["detail"]
+
+
+def test_a_bad_front_photo_costs_nothing_and_does_not_fail_the_capture(api, monkeypatch):
+    calls = []
+    monkeypatch.setattr(eis, "read", lambda url: calls.append(url) or fake_call())
+    r = post_with_front(api, b"not an image")
+    assert r.status_code == 200
+    doc = r.json()["doc"]
+    assert len(calls) == 1  # only the back photo was read
+    assert "front_failed" in doc["parse_flags"] and "front_image_path" not in doc
+    assert doc["nutrients"]["carbohydrates_g"] == 27
+
+
+def test_a_front_read_that_raises_keeps_the_back_read(api, monkeypatch):
+    calls = []
+
+    def read(url):
+        calls.append(url)
+        if len(calls) == 2:  # the front
+            raise RuntimeError("cannot reach Elasticsearch: boom")
+        return fake_call()
+
+    monkeypatch.setattr(eis, "read", read)
+    r = post_with_front(api, jpeg())
+    assert r.status_code == 200 and len(calls) == 2
+    doc = r.json()["doc"]
+    assert "front_failed" in doc["parse_flags"] and doc["nutrients"]["carbohydrates_g"] == 27
+    assert api.indexed[0]["id"] == doc["id"]  # the label was still saved
+
+
+def test_log_and_edit_routes_answer_503_when_elasticsearch_fails(api, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("cluster unreachable")
+
+    label = {"id": "x", "nutrients": {"carbohydrates_g": 10, "basis": "100g"}}
+    entry = {"label_id": "x", "portions": 1, "day": "2026-11-10"}
+    monkeypatch.setattr(es, "get_doc", boom)
+    assert api.post("/api/log", json=entry).status_code == 503
+    assert api.patch("/api/doc/x", json={"product_name": "Jam"}).status_code == 503
+    assert api.get("/api/doc/x").status_code == 503
+    monkeypatch.setattr(es, "get_doc", lambda doc_id: label)
+    monkeypatch.setattr(es, "log_entry", boom)
+    monkeypatch.setattr(es, "update_doc", boom)
+    monkeypatch.setattr(es, "delete_log_entry", boom)
+    assert api.post("/api/log", json=entry).status_code == 503
+    assert api.patch("/api/doc/x", json={"product_name": "Jam"}).status_code == 503
+    assert api.delete("/api/log/abc").status_code == 503
+
+
 def test_capture_rejects_non_images(api):
     r = api.post("/api/capture", files={"image": ("x.jpg", b"not an image", "image/jpeg")})
     assert r.status_code == 400

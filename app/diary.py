@@ -10,10 +10,18 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import UTC, date, datetime
+from decimal import ROUND_HALF_UP, Decimal
 
-MIN_PORTIONS = 0.25
+MIN_PORTIONS = 0.5  # the page's stepper (web/js/result.js) starts here too: keep them equal
 MAX_PORTIONS = 20.0
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def round_half_up(value: float, digits: int = 0) -> float:
+    """Round like JavaScript's Math.round (halves go up); Python's round() takes exact halves to even,
+    so 2.25 would save as 2.2 while the page shows 2.3. Mirrors `round1` in web/js/util.js."""
+    rounded = Decimal(str(value)).quantize(Decimal(1).scaleb(-digits), rounding=ROUND_HALF_UP)
+    return int(rounded) if digits == 0 else float(rounded)
 
 
 def is_valid_day(value: str) -> bool:
@@ -50,13 +58,13 @@ def net_carbs(nutrients: dict) -> tuple[float | None, str | None]:
         return None, None
     includes_fibre = nutrients.get("carb_includes_fibre")
     if includes_fibre is False:
-        return round(carbs, 1), ALREADY_NET
+        return round_half_up(carbs, 1), ALREADY_NET
     if includes_fibre is None:
-        return round(carbs, 1), FORMAT_UNKNOWN
+        return round_half_up(carbs, 1), FORMAT_UNKNOWN
     fiber = nutrients.get("fiber_g")
     if fiber is None:
-        return round(carbs, 1), FIBRE_NOT_READ
-    return round(max(carbs - fiber, 0.0), 1), MINUS_FIBRE
+        return round_half_up(carbs, 1), FIBRE_NOT_READ
+    return round_half_up(max(carbs - fiber, 0.0), 1), MINUS_FIBRE
 
 
 def portion_unit(nutrients: dict) -> tuple[str, float | None]:
@@ -90,13 +98,13 @@ def entry_from_label(label: dict, portions: float, day: str) -> dict:
         "eaten_at": datetime.now(UTC).isoformat(),
         "portions": portions,
         "basis": nutrients.get("basis"),
-        "net_carbs_g": None if net is None else round(net * portions, 1),
-        "calories_kcal": None if kcal is None else round(kcal * portions),
+        "net_carbs_g": None if net is None else round_half_up(net * portions, 1),
+        "calories_kcal": None if kcal is None else round_half_up(kcal * portions),
         "net_method": method,
         "unit_text": unit_text,
         "amount_text": None
         if unit_size is None
-        else f"{round(unit_size * portions):g} {unit_text.split()[-1]}",
+        else f"{round_half_up(unit_size * portions):g} {unit_text.split()[-1]}",
         "edited": bool(label.get("edited_fields")),
     }
     return {k: v for k, v in entry.items() if v is not None}
