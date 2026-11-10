@@ -26,9 +26,10 @@ There is no barcode check and no "Verified" badge: both were removed on purpose.
 ## Layout
 
 ```
-app/            FastAPI app: eis.py, ocr.py, parse.py, naming.py, diary.py, allergens.py, es.py, pipeline.py, main.py
+app/            FastAPI app: eis.py, images.py, ocr.py, parse.py, naming.py, diary.py, allergens.py, es.py, pipeline.py, main.py
 web/            static frontend (phone-first): index.html, style.css, js/ (5 ES modules)
-scripts/        score.py, smoke_test.py, fetch_off_sample.py, seed_off.py, ui_screenshots.py, check_key_privileges.py
+scripts/        score.py, smoke_test.py, fetch_off_sample.py, seed_off.py, ui_screenshots.py, check_key_privileges.py,
+                backfill_carb_format.py (re-flags stored labels after a parser change; report only, `--apply` writes)
 tests/          pytest; fixtures/ holds real model output for the cases that broke the parser
 data/kitchen/   my own phone photos and their ground truth (committed; they are mine)
 data/off/       Open Food Facts sample (git-ignored; fetched by script; attribution kept)

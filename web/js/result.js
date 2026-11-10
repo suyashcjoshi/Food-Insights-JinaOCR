@@ -122,7 +122,7 @@ function renderPanel(nutrients) {
   $("#r-basis").textContent = basisText(nutrients);
 
   const rows = NUTRIENT_ROWS.filter((row) => rowIsShown(row, nutrients)).map((row) => nutrientRow(row, nutrients));
-  if (nutrients.energy_kj !== undefined) {
+  if (nutrients.energy_kj != null) {
     rows.push(el("div", { class: "r child" }, el("span", { text: "energy as printed" }), el("span", { class: "v", text: `${fmt(nutrients.energy_kj)} kJ` })));
   }
   rows.forEach((row, i) => {

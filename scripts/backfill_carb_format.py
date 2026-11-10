@@ -18,22 +18,26 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from elasticsearch.helpers import scan
+
 from app import es
 from app.ocr import strip_regions
 from app.parse import parse
 
 REPORTS = ROOT / "_notes" / "reports"
-PAGE = 500
 
 
-def stored_labels() -> list[dict]:
-    body = es.client().search(
+def stored_labels():
+    """Every stored label (all pages), with just the fields this script needs."""
+    hits = scan(
+        es.client(),
         index=es.index_name(),
-        query={"match_all": {}},
-        size=PAGE,
-        source_includes=["id", "raw_markdown", "nutrients.carb_includes_fibre"],
+        query={
+            "query": {"match_all": {}},
+            "_source": ["id", "raw_markdown", "nutrients.carb_includes_fibre"],
+        },
     )
-    return [hit["_source"] for hit in body["hits"]["hits"]]
+    return (hit["_source"] for hit in hits)
 
 
 def main() -> int:

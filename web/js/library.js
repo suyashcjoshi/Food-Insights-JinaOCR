@@ -1,7 +1,7 @@
 // Library screen: a grid of every label read, a search box, language chips, and the allergen bars.
 // Two Elasticsearch-backed calls draw it (/api/search and /api/aggs) with the same filters,
 // so the grid and the bars always agree. Tapping a tile adds a third call (/api/doc/<id>).
-import { $, ALLERGEN_SHORT_NAMES, el, imageUrl, langName, state } from "./util.js";
+import { $, ALLERGEN_SHORT_NAMES, cssUrl, decodeEntities, el, imageUrl, langName, state } from "./util.js";
 import { openResult } from "./result.js";
 
 const PAGE_SIZE = "60";
@@ -129,7 +129,7 @@ function snippetNode(doc) {
   if (!hit) return null;
   const parts = hit.split(/<\/?mark>/); // even positions are plain text, odd positions are matches
   // the reader's own HTML tags and Markdown marks are not shown, and line breaks become spaces
-  const plain = (text) => text.replace(/<[^>]+>/g, " ").replace(/(\*\*|__|`)/g, "").replace(/^#{1,6}\s+/gm, "").replace(/\s+/g, " ");
+  const plain = (text) => decodeEntities(text).replace(/<[^>]+>/g, " ").replace(/(\*\*|__|`)/g, "").replace(/^#{1,6}\s+/gm, "").replace(/\s+/g, " ");
   return el("span", { class: "snip" }, parts.map((text, i) => (i % 2 ? el("mark", { text: plain(text) }) : plain(text))));
 }
 
@@ -137,7 +137,7 @@ function renderTile(doc) {
   const image = imageUrl(doc);
   const snippet = searchText() ? snippetNode(doc) : null; // with a search active, results show why they matched
   return el("button", { type: "button", class: "tile" + (snippet ? " result" : ""), "aria-label": doc.product_name || "Label", onclick: () => openLabel(doc.id) },
-    el("span", { class: "sq", style: image ? `background-image:url('${encodeURI(image)}')` : null }),
+    el("span", { class: "sq", style: image ? `background-image:${cssUrl(image)}` : null }),
     el("span", { class: "meta" },
       el("span", { class: "nm", text: doc.product_name || "Unnamed label" }),
       el("span", { class: "lg", text: doc.language ? langName(doc.language) : "Language not set" }),

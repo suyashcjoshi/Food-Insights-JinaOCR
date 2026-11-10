@@ -32,6 +32,7 @@ const MESSAGES = {
   unreachable: "Couldn't reach the app. Check your connection and try again.",
   modelDown: "Couldn't reach the model. Try again in a minute; the first read after idle can take two to three minutes.",
   notAnImage: "That file isn't an image we can read. Choose a JPEG or PNG photo.",
+  tooLarge: "That photo is larger than 15 MB. Choose a smaller one.",
   other: "Something went wrong on our side. Try again in a minute.",
   reading: "Reading the label. The first read after idle can take two to three minutes.",
 };
@@ -110,6 +111,7 @@ async function postCapture() {
   const body = await response.json().catch(() => ({}));
   if (response.ok) return body;
   if (body.error === "ocr_failed" || response.status === 502) throw new Error(MESSAGES.modelDown);
+  if (response.status === 413) throw new Error(MESSAGES.tooLarge);
   if (response.status === 400) throw new Error(MESSAGES.notAnImage);
   throw new Error(MESSAGES.other);
 }

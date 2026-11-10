@@ -43,7 +43,8 @@ The Library photos are Open Food Facts samples.
 - **Your limits stay in your browser.** The app only says "over" or "under". It is a demo, not medical advice.
 
 I tried it on 50 Open Food Facts photos in 7 languages: 64% of the values match the database (58% for
-carbohydrates). French was the weakest (41%).
+carbohydrates). French was the weakest (41%). To repeat it, run `make fetch-sample` then `make score`; the
+photos come from the Open Food Facts search, so your sample, and your numbers, will differ a little.
 
 ## Run it
 
@@ -67,9 +68,12 @@ while the model wakes up. The two indices are created on first use; an index fro
 
 ## Where things are
 
-- `app/`: the backend (`eis.py` calls the model, `parse.py` finds the numbers, `es.py` handles both indices).
+- `app/`: the backend. `eis.py` calls the model, `images.py` rotates and resizes photos, `ocr.py` cleans the
+  model output, `parse.py` finds the numbers, `es.py` handles both indices.
 - `web/`: the page, plain HTML, CSS and JS, no build step.
-- `scripts/`: benchmark and sample-data tools.
+- `scripts/`: `score.py` (benchmark), `fetch_off_sample.py` and `seed_off.py` (sample data), `smoke_test.py`,
+  `check_key_privileges.py` (what an API key can do), `ui_screenshots.py` (README images) and
+  `backfill_carb_format.py` (re-flags stored labels after a parser change; add `--apply` to write).
 
 ## References
 

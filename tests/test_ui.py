@@ -413,7 +413,7 @@ def test_stepper_says_what_a_portion_is_and_previews_the_day_before_you_add(page
 def test_library_search_shows_the_matching_text_with_the_words_marked(page, monkeypatch):
     hit = {
         "id": "x1", "product_name": "Schokolade", "language": "de", "image_path": "captures/none.jpg",
-        "highlight": {"unverified_text": ["**Kann** Spuren von <mark>Erdnüssen</mark> enthalten <br>"]},
+        "highlight": {"unverified_text": ["**Kann** Spuren von <mark>Erdnüssen</mark> &amp; Milch enthalten &lt;br&gt;"]},
     }  # fmt: skip
     monkeypatch.setattr(
         es, "search", lambda q, a, lang, size, kind, mode="words": {"total": 1, "hits": [hit]}
@@ -425,6 +425,9 @@ def test_library_search_shows_the_matching_text_with_the_words_marked(page, monk
     assert page.wait("!!document.querySelector('#grid .tile .snip mark')")
     assert page.ev("document.querySelector('#grid .tile .snip mark').textContent") == "Erdnüssen"
     assert "Kann Spuren von" in page.ev("document.querySelector('#grid .tile .snip').textContent")
+    assert "& Milch" in page.ev(
+        "document.querySelector('#grid .tile .snip').textContent"
+    )  # entities decoded
     assert "<br>" not in page.ev(
         "document.querySelector('#grid .tile .snip').textContent"
     )  # shown as text, no markup

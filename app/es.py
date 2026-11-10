@@ -16,8 +16,10 @@ from elasticsearch import Elasticsearch, NotFoundError
 load_dotenv()
 
 KINDS = ("contains", "may_contain")
+SOURCES = ("demo", "kitchen", "off")  # where a label came from; anything else is rejected
 SEARCH_FIELDS = ["product_name^3", "plain_text", "unverified_text"]  # product name counts triple
 HIGHLIGHT = {
+    "encoder": "html",  # model text is escaped; only our own <mark> tags are real markup
     "fields": {"plain_text": {}, "unverified_text": {}},
     "pre_tags": ["<mark>"],
     "post_tags": ["</mark>"],

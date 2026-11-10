@@ -40,7 +40,9 @@ def _env(name: str, default: str = "") -> str:
 
 
 def reader_endpoint() -> str:
-    return _env("EIS_OCR_DOCX_ENDPOINT", ".jina-reader")
+    return _env("EIS_READER_ENDPOINT") or _env(
+        "EIS_OCR_DOCX_ENDPOINT", ".jina-reader"
+    )  # old name still works
 
 
 def client() -> httpx.Client:

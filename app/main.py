@@ -9,7 +9,9 @@ Limits are the person's own and live in the browser.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
@@ -29,7 +31,20 @@ ERROR_DETAIL_CHARS = 200
 WARMUP_GAP_S = 300  # each warmup is a paid model call: at most one per five minutes
 _last_warmup: float | None = None
 
-app = FastAPI(title="Food Insights", docs_url="/api/docs", openapi_url="/api/openapi.json")
+log = logging.getLogger("food_insights")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Create the photo and page folders when the server starts, not when the module is imported."""
+    (ROOT / "data" / "captures").mkdir(parents=True, exist_ok=True)
+    (ROOT / "web").mkdir(exist_ok=True)
+    yield
+
+
+app = FastAPI(
+    title="Food Insights", docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=lifespan
+)
 
 
 def _check_kind(kind: str | None) -> None:
@@ -67,7 +82,8 @@ async def _save(doc: dict) -> dict:
     try:
         await asyncio.to_thread(es.index_doc, doc)
         return {"ok": True, "index": es.index_name()}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
+        log.exception("could not index label %s", doc.get("id"))
         return {"ok": False, "error": str(exc)[:300]}
 
 
@@ -104,12 +120,18 @@ async def capture(
     source: Annotated[str, Form()] = "demo",
     index: Annotated[bool, Form()] = True,
 ) -> JSONResponse:
+    if source not in es.SOURCES:
+        raise HTTPException(400, f"source must be one of {list(es.SOURCES)}")
     data = await image.read()
-    if not data or len(data) > MAX_UPLOAD:
-        raise HTTPException(400, "send one image up to 15 MB")
+    if not data:
+        raise HTTPException(400, "send one image")
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(413, "the photo is larger than 15 MB")
     front_data = await front.read() if front else None
-    if front_data is not None and (not front_data or len(front_data) > MAX_UPLOAD):
-        raise HTTPException(400, "the front photo must be one image up to 15 MB")
+    if front_data is not None and not front_data:
+        raise HTTPException(400, "the front photo must be an image")
+    if front_data is not None and len(front_data) > MAX_UPLOAD:
+        raise HTTPException(413, "the front photo is larger than 15 MB")
     try:
         result = await asyncio.to_thread(
             pipeline.capture,
@@ -191,7 +213,8 @@ MAX_NUTRIENT_VALUE = 10_000
 
 
 class DocPatch(BaseModel):
-    """Fields a person may correct on a capture. Only the ones sent are changed; empty clears."""
+    """Fields a person may correct on a capture. Only the ones sent are changed. An empty name or
+    language clears that field; a number can be changed but not cleared."""
 
     product_name: str | None = None
     language: str | None = None
@@ -205,7 +228,10 @@ def _nutrient_edits(sent: dict[str, float], current: dict) -> tuple[dict, list[s
         raise HTTPException(400, f"only {list(EDITABLE_NUTRIENTS)} can be edited, not {unknown}")
     if any(not 0 <= value <= MAX_NUTRIENT_VALUE for value in sent.values()):
         raise HTTPException(400, f"numbers must be between 0 and {MAX_NUTRIENT_VALUE}")
-    return {**current, **sent}, sorted(sent)
+    merged = {**current, **sent}
+    if "energy_kcal" in sent:
+        merged["energy_kj"] = None  # the printed kJ no longer matches the corrected kcal
+    return merged, sorted(sent)
 
 
 def _edits(patch: DocPatch) -> dict:
@@ -286,7 +312,9 @@ async def remove_entry(entry_id: str) -> dict:
     return {"removed": entry_id}
 
 
-(ROOT / "data" / "captures").mkdir(parents=True, exist_ok=True)
-app.mount("/captures", StaticFiles(directory=ROOT / "data" / "captures"), name="captures")
-(ROOT / "web").mkdir(exist_ok=True)
-app.mount("/", StaticFiles(directory=ROOT / "web", html=True), name="web")
+app.mount(
+    "/captures",
+    StaticFiles(directory=ROOT / "data" / "captures", check_dir=False),
+    name="captures",
+)
+app.mount("/", StaticFiles(directory=ROOT / "web", html=True, check_dir=False), name="web")

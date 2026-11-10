@@ -267,6 +267,64 @@ def test_the_read_sends_the_ocr_preset_explicitly(monkeypatch):
     assert sent["body"]["input"][0]["content"]["type"] == "image"
 
 
+def test_an_unknown_source_is_rejected_and_the_known_ones_are_accepted(api):
+    assert post(api, source="<script>").status_code == 400
+    assert (
+        post(api, source="off").status_code == 200 and post(api, source="demo").status_code == 200
+    )
+
+
+def test_a_photo_over_the_size_limit_is_a_413_not_a_not_an_image_error(api, monkeypatch):
+    monkeypatch.setattr(main, "MAX_UPLOAD", 10)
+    r = post(api)
+    assert r.status_code == 413 and "15 MB" in r.json()["detail"]
+    files = {
+        "image": ("l.jpg", b"x" * 5, "image/jpeg"),
+        "front": ("f.jpg", b"x" * 50, "image/jpeg"),
+    }
+    assert api.post("/api/capture", files=files).status_code == 413
+
+
+def test_correcting_the_calories_drops_the_stale_printed_kj(stored):
+    stored.patch("/api/doc/abc", json={"nutrients": {"energy_kcal": 150}})
+    assert stored.written["nutrients"]["energy_kcal"] == 150
+    assert stored.written["nutrients"]["energy_kj"] is None
+    stored.written.clear()
+    stored.patch("/api/doc/abc", json={"nutrients": {"fiber_g": 2}})
+    assert "energy_kj" not in stored.written["nutrients"]  # other edits leave kJ alone
+
+
+def test_highlighted_text_is_html_encoded_by_elasticsearch():
+    assert es.HIGHLIGHT["encoder"] == "html" and es.HIGHLIGHT["pre_tags"] == ["<mark>"]
+
+
+def test_the_reader_endpoint_name_has_a_new_env_var_and_the_old_one_still_works(monkeypatch):
+    monkeypatch.delenv("EIS_READER_ENDPOINT", raising=False)
+    monkeypatch.delenv("EIS_OCR_DOCX_ENDPOINT", raising=False)
+    assert eis.reader_endpoint() == ".jina-reader"
+    monkeypatch.setenv("EIS_OCR_DOCX_ENDPOINT", ".old-name")
+    assert eis.reader_endpoint() == ".old-name"
+    monkeypatch.setenv("EIS_READER_ENDPOINT", ".new-name")
+    assert eis.reader_endpoint() == ".new-name"
+
+
+def test_the_photo_folder_is_made_at_startup_not_at_import(monkeypatch, tmp_path):
+    monkeypatch.setattr(main, "ROOT", tmp_path)
+    assert not (tmp_path / "data" / "captures").exists()
+    with TestClient(main.app):
+        assert (tmp_path / "data" / "captures").is_dir()
+
+
+def test_a_failed_save_is_logged_on_the_server(api, monkeypatch, caplog):
+    def boom(doc):
+        raise RuntimeError("cluster unreachable")
+
+    monkeypatch.setattr(es, "index_doc", boom)
+    with caplog.at_level("ERROR", logger="food_insights"):
+        post(api)
+    assert "could not index label" in caplog.text
+
+
 def test_an_image_with_far_too_many_pixels_is_a_400(api, monkeypatch):
     def bomb(data, *a, **k):
         raise Image.DecompressionBombError("too big")

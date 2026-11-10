@@ -44,6 +44,12 @@ export const ALLERGEN_SHORT_NAMES = {
 };
 
 /** 27 -> "27", 0.12345 -> "0.123", missing -> "–". */
+/** A CSS `url("...")` for a path from the server: quotes and brackets are percent-encoded, so a name cannot break out. */
+export const cssUrl = (path) => `url("${encodeURI(path).replace(/['"()]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase())}")`;
+
+/** Text with HTML entities decoded (Elasticsearch escapes highlighted text). Parsed as text, never inserted as HTML. */
+export const decodeEntities = (text) => new DOMParser().parseFromString(text, "text/html").documentElement.textContent;
+
 export const fmt = (n) => (n === null || n === undefined ? "–" : String(Math.round(n * 1000) / 1000));
 
 export const seconds = (ms) => `${(ms / 1000).toFixed(1)} s`;

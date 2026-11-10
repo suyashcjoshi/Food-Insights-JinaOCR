@@ -2,7 +2,7 @@
 // Elasticsearch aggregation (/api/today); the limits live in this browser. Numbers over a limit turn red.
 // The app only compares numbers. It never says what to eat.
 
-import { $, el, fmt, getLimits, imageUrl, openLow, closeLow, saveLimits, state, todayKey } from "./util.js";
+import { $, cssUrl, el, fmt, getLimits, imageUrl, openLow, closeLow, saveLimits, state, todayKey } from "./util.js";
 
 // ---------- totals against limits ----------
 
@@ -48,7 +48,7 @@ function entryRow(entry) {
     entry.calories_kcal !== undefined ? `${fmt(entry.calories_kcal)} kcal` : "calories not read",
   ].join(" · ");
   return el("div", { class: "entry" },
-    el("span", { class: "sq small", style: image ? `background-image:url('${encodeURI(image)}')` : null }),
+    el("span", { class: "sq small", style: image ? `background-image:${cssUrl(image)}` : null }),
     el("span", { class: "e-text" },
       el("span", { class: "e-name", text: entry.product_name || "Unnamed label" }),
       el("span", { class: "e-sub", text: `${portionsText(entry)} · ${nutrition}` }),
