@@ -72,7 +72,8 @@ already exist (`.jina-reader` for document_extraction), nothing to PUT.
 - The app compares totals with the person's own limits and never advises: no "you should", no targets we
   choose, no recommendations. Defaults (100 g net carbs, 1800 kcal) are only starting values the person edits.
 - Net carbs subtract fibre ONLY when the printed carbohydrate includes it (US / Canada "Total Carbohydrate"
-  panels, found by `parse.py` as `carb_includes_fibre`). EU / UK "Carbohydrate" already excludes fibre (EU
+  panels, found by `parse.py` as `carb_includes_fibre` from a "Total Carbohydrate" nutrient row only, never a
+  heading, the ingredients text or a "Dietary fibre" row). EU / UK "Carbohydrate" already excludes fibre (EU
   Regulation 1169/2011), so subtracting it again undercounts. Unknown format, or US-style with no fibre figure:
   count the full carbohydrate and say so. Fibre printed as `<0.5g` counts as 0 (flag `trace:fiber_g`). Never below 0. The rule lives in `app/diary.py` (mirrored in
   `web/js/util.js` for display, rounding halves up like `Math.round`): change both, and the tests.

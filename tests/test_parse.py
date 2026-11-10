@@ -238,3 +238,53 @@ def test_serving_words_need_word_boundaries():
 
     assert not PER_SERVING.search("chocolate cupcake mix")
     assert PER_SERVING.search("1 cup") and PER_SERVING.search("Por 2 raciones")
+
+
+UK_ROWS = (
+    "| Energy | 1600 kJ / 380 kcal |\n| Fat | 8 g |\n| Carbohydrate | 60 g |\n"
+    "| of which sugars | 5 g |\n| Fibre | 4 g |\n| Protein | 10 g |\n"
+)
+
+
+@pytest.mark.parametrize(
+    "md",
+    [
+        "# Nutrition facts per 100 g\n\n| | per 100 g |\n| --- | --- |\n" + UK_ROWS,  # a heading
+        "Typical values per 100 g\n"
+        + UK_ROWS.replace("| ", "").replace(" |", "")
+        + "\nIngredients: wheat flour, dietary fibre (inulin), sugar.\n",  # an ingredients line
+        "Nutrition Information\n\n| | Per 100 g |\n| --- | --- |\n"
+        + UK_ROWS.replace("Fibre", "Dietary fibre"),
+    ],
+    ids=["heading", "ingredients", "dietary-fibre-row"],
+)
+def test_a_per_100g_panel_is_not_taken_for_us_style_by_a_heading_or_ingredient_text(md):
+    from app import diary
+
+    res = parse(md)
+    assert res.carb_includes_fibre is False and res.nutrients["carbohydrates_g"] == 60
+    net, _ = diary.net_carbs({**res.nutrients, "basis": res.basis, "carb_includes_fibre": False})
+    assert net == 60  # fibre is not subtracted a second time
+
+
+def test_us_style_needs_a_total_carbohydrate_row():
+    us = "Nutrition Facts\nServing size 1 bar (40g)\nCalories 190\nTotal Carbohydrate 22g 8%\nDietary Fiber 3g\n"
+    assert parse(us).carb_includes_fibre is True
+    no_row = "Nutrition Facts\nServing size 1 bar (40g)\nCalories 190\nCarbohydrate 22g\nDietary Fiber 3g\n"
+    assert parse(no_row).carb_includes_fibre is None  # unknown: the full carbohydrate is counted
+
+
+@pytest.mark.parametrize(
+    "header", ["Per serve", "Quantity per serve", "Per pack", "Avg Qty per Serving"]
+)
+def test_a_serve_or_pack_column_before_per_100g_is_not_read_as_per_100g(header):
+    rows = "| Protein | 5 g | 10 g |\n| Fat, total | 4 g | 8 g |\n| Carbohydrate | 20 g | 40 g |\n"
+    res = parse(f"Nutrition Information\n\n| | {header} | Per 100g |\n| --- | --- | --- |\n" + rows)
+    assert res.nutrients["carbohydrates_g"] == 40 and res.column == 1
+    assert "columns_unrecognised" not in res.suspect_reasons
+
+
+def test_a_header_that_names_fewer_columns_than_the_rows_have_is_marked_suspect():
+    md = "Nutrition Information\n\n| | Per 100g |\n| --- | --- |\n| Protein | 5 g | 10 g |\n| Carbohydrate | 20 g | 40 g |\n"
+    res = parse(md)
+    assert "columns_unrecognised" in res.suspect_reasons and res.parse_suspect

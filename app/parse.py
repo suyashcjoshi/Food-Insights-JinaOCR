@@ -149,7 +149,7 @@ TRACE_BEFORE = re.compile(r"(?:<|less\s+than)\s*$", re.IGNORECASE)
 # the per-100 column header, and the value-column headers that can stand left of it
 COL100_RE = re.compile(r"(?<![\d.,])100\s*(?:g|gr|ml)(?![a-z])", re.IGNORECASE)
 COLUMN_HEADER_RE = re.compile(
-    r"\b(?:serving|portion|porcion|porcao|racao|bar|piece|cup|tasse)\b\s*\(?\s*"
+    r"\b(?:servings?|serves?|portion|porcion|porcao|racao|bar|piece|pack(?:age)?|cup|tasse)\b\s*\(?\s*"
     r"(?:\d+(?:[.,]\d+)?\s*(?:g|ml)\)?)?|(?<![\d.,])\d+(?:[.,]\d+)?\s*(?:g|ml)(?![a-z])",
     re.IGNORECASE,
 )
@@ -827,16 +827,18 @@ def _set_basis(res: ParseResult, md: str) -> None:
     res.per = "100g" if res.basis.startswith("100") else res.basis
 
 
-# US / Canada panels print "Total Carbohydrate" with "Dietary Fiber" inside it.
-US_STYLE_RE = re.compile(
-    r"total\s+carbohydrate|dietary\s+fib(?:er|re)|nutrition\s+facts|total\s+carb\b", re.IGNORECASE
-)
+# US panels print a "Total Carbohydrate" row with the fibre inside it. Only a nutrient row counts (the label
+# followed by a number, anywhere in the line: merged table rows put it mid-line): a heading ("Nutrition
+# facts per 100 g"), an ingredients line ("dietary fibre (inulin)") or a "Dietary fibre" row on a UK /
+# Australian panel says nothing.
+US_STYLE_ROW = re.compile(r"total\s+carb(?:ohydrates?)?\b[^\d\n]{0,15}\d", re.IGNORECASE)
 
 
-def _carb_includes_fibre(md: str, basis: str) -> bool | None:
-    """True for a US-style panel; False for an EU / UK per-100 g panel (EU rules count carbohydrate
-    without fibre, and list fibre on its own row); None when the format cannot be told."""
-    if US_STYLE_RE.search(md):
+def _carb_includes_fibre(lines: list[str], basis: str) -> bool | None:
+    """True for a US-style panel (a "Total Carbohydrate" row); False for an EU / UK per-100 g panel (EU
+    rules count carbohydrate without fibre, and list fibre on its own row); None when the format cannot
+    be told, and then the full carbohydrate is counted."""
+    if any(US_STYLE_ROW.search(ln) for ln in lines):
         return True
     if basis in ("100g", "100ml"):
         return False
@@ -873,8 +875,12 @@ def parse(md: str, *, force_column: int | None = None) -> ParseResult:
         swapped.column_swapped = True
         return swapped
 
+    if res.column is not None and res.width and len(res.col_sizes) < res.width:
+        res.suspect_reasons.append(
+            "columns_unrecognised"
+        )  # the header names fewer columns than the rows have
     _set_basis(res, md)
-    res.carb_includes_fibre = _carb_includes_fibre(md, res.basis)
+    res.carb_includes_fibre = _carb_includes_fibre(lines, res.basis)
     _align(rows, res)
     for name in res.trace:  # after alignment, which may have re-read the `<0.5` figure as 0.5
         if name in res.nutrients:

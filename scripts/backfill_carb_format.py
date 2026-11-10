@@ -47,7 +47,7 @@ def main() -> int:
         flag = parse(strip_regions(label.get("raw_markdown", ""))).carb_includes_fibre
         seen[{True: "US-style", False: "EU / UK", None: "unknown"}[flag]] += 1
         current = (label.get("nutrients") or {}).get("carb_includes_fibre")
-        if flag is None or flag == current:
+        if flag == current:  # a label whose format is now unknown loses a wrong US-style flag too
             continue
         changed += 1
         if args.apply:
