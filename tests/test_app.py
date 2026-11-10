@@ -108,6 +108,17 @@ def test_facility_phrases_are_precautionary():
 # --- mapping -------------------------------------------------------------------------------------
 
 
+def test_meaning_search_uses_a_semantic_field_fed_from_plain_text():
+    p = es.MAPPING["properties"]
+    assert p["meaning"]["type"] == "semantic_text"
+    assert p["plain_text"]["copy_to"] == "meaning"
+    words = es._query("peanut", [])["bool"]["must"][0]
+    meaning = es._query("peanut", [], "meaning")["bool"]["must"][0]
+    assert "multi_match" in words
+    assert meaning == {"semantic": {"field": "meaning", "query": "peanut"}}
+    assert es._query("", [], "meaning")["bool"]["must"] == [{"match_all": {}}]
+
+
 def test_mapping_types():
     p = es.MAPPING["properties"]
     num = [
@@ -215,21 +226,24 @@ def test_capture_rejects_non_images(api):
 def test_search_and_aggs_pass_filters_through(api, monkeypatch):
     calls = {}
 
-    def fake_search(q, a, lang, size, kind):
-        calls["s"] = (q, a, lang, size, kind)
+    def fake_search(q, a, lang, size, kind, mode="words"):
+        calls["s"] = (q, a, lang, size, kind, mode)
         return {"total": 0, "hits": []}
 
-    def fake_aggs(q, a, lang, kind):
-        calls["g"] = (q, a, lang, kind)
+    def fake_aggs(q, a, lang, kind, mode="words"):
+        calls["g"] = (q, a, lang, kind, mode)
         return {"total": 0, "allergens": []}
 
     monkeypatch.setattr(es, "search", fake_search)
     monkeypatch.setattr(es, "aggregate", fake_aggs)
     url = "/api/search?q=jam&allergen=peanuts&allergen=milk&language=fr"
     assert api.get(url + "&allergen_kind=may_contain").status_code == 200
-    assert calls["s"] == ("jam", ["peanuts", "milk"], "fr", 24, "may_contain")
+    assert calls["s"] == ("jam", ["peanuts", "milk"], "fr", 24, "may_contain", "words")
     assert api.get("/api/aggs?allergen=peanuts").status_code == 200
-    assert calls["g"] == ("", ["peanuts"], None, None)
+    assert calls["g"] == ("", ["peanuts"], None, None, "words")
+    assert api.get("/api/search?q=sweet+spread&mode=meaning").status_code == 200
+    assert calls["s"][0] == "sweet spread" and calls["s"][-1] == "meaning"
+    assert api.get("/api/search?mode=nonsense").status_code == 422
     assert api.get("/api/search?allergen_kind=sometimes").status_code == 400
     assert api.get("/api/aggs?allergen_kind=sometimes").status_code == 400
 

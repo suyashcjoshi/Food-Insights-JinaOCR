@@ -64,8 +64,9 @@ already exist (`.jina-reader` for document_extraction), nothing to PUT.
   `score.py`, `seed_off.py`); the app does not call it. When fetching: a descriptive `User-Agent` from
   `OFF_USER_AGENT` in `.env`, ≤ 10 search requests/min, product JSON cached to disk.
 - Do not add OpenCV, deskew, or any CV pipeline. Framing is the user's job.
-- Do not build chat/RAG, reranking, or embeddings in this repo yet. Those are
-  a follow-up video.
+- Search has two modes: words (BM25, typo-tolerant) and meaning (a `semantic_text` field, `meaning`, filled
+  from `plain_text` by `copy_to`; Elasticsearch embeds it with the default endpoint, no inference endpoint to
+  create). Do not build chat/RAG or reranking in this repo yet. Those are a follow-up video.
 - No barcode check and no verification badge (removed on purpose; do not re-add).
 - The app compares totals with the person's own limits and never advises: no "you should", no targets we
   choose, no recommendations. Defaults (100 g net carbs, 1800 kcal) are only starting values the person edits.

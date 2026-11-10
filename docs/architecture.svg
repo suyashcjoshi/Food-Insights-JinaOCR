@@ -12,7 +12,7 @@
 <text x="48" y="76" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="40" font-weight="700" fill="#1C1E23" text-anchor="start">Food Insights</text>
 <text x="48" y="110" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="18" font-weight="400" fill="#605F60" text-anchor="start">Hard-to-read food labels → nutrition numbers you can search</text>
 <g transform="translate(1250,42) scale(0.22)"><use href="#el"/></g><line x1="1425" y1="40" x2="1425" y2="100" stroke="#D3DAE6" stroke-width="2"/><g transform="translate(1450,38) scale(0.55)"><use href="#ji"/></g>
-<rect x="40" y="170" width="300" height="570" rx="18" fill="#fff" stroke="#D3DAE6" stroke-width="1.5" filter="url(#sh)"/>
+<rect x="40" y="170" width="300" height="600" rx="18" fill="#fff" stroke="#D3DAE6" stroke-width="1.5" filter="url(#sh)"/>
 <text x="190" y="220" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="24" font-weight="700" fill="#1C1E23" text-anchor="middle">Web front end</text>
 <text x="190" y="245" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="400" fill="#605F60" text-anchor="middle">plain HTML + JS</text>
 <rect x="58" y="270" width="264" height="84" rx="14" fill="#F0FAFA" stroke="#009191" stroke-width="1.5"/>
@@ -29,8 +29,7 @@
 <text x="136" y="530" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="13.5" font-weight="400" fill="#605F60" text-anchor="start">nutrition panels</text>
 <rect x="58" y="580" width="264" height="44" rx="22" fill="#fff" stroke="#D3DAE6" stroke-width="1.5"/>
 <text x="84" y="608" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="400" fill="#8A94A6" text-anchor="start">search the library…</text>
-<text x="190" y="690" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="400" fill="#605F60" text-anchor="middle">your own photos</text>
-<rect x="470" y="170" width="330" height="570" rx="18" fill="#fff" stroke="#D3DAE6" stroke-width="1.5" filter="url(#sh)"/>
+<rect x="470" y="170" width="330" height="600" rx="18" fill="#fff" stroke="#D3DAE6" stroke-width="1.5" filter="url(#sh)"/>
 <text x="635" y="220" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="24" font-weight="700" fill="#1C1E23" text-anchor="middle">FastAPI app</text>
 <rect x="494" y="250" width="282" height="80" rx="14" fill="#009191"/>
 <text x="635" y="299" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" fill="#fff" text-anchor="middle">EXTRACT</text>
@@ -46,13 +45,17 @@
 <text x="1270" y="335" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="16.5" font-weight="700" fill="#fff" text-anchor="middle">POST /_inference/document_extraction/.jina-reader</text>
 <text x="1270" y="400" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" fill="#009191" text-anchor="middle">photo in → Markdown out</text>
 <text x="1270" y="428" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="400" fill="#605F60" text-anchor="middle">tables, other languages, odd shapes</text>
-<rect x="980" y="480" width="580" height="260" rx="18" fill="#F1F6FE" stroke="#0B64DD" stroke-width="3" filter="url(#sh)"/>
+<rect x="980" y="480" width="580" height="290" rx="18" fill="#F1F6FE" stroke="#0B64DD" stroke-width="3" filter="url(#sh)"/>
 <g transform="translate(1008,502) scale(0.19)"><use href="#el"/></g>
 <text x="1532" y="538" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="20" font-weight="700" fill="#1C1E23" text-anchor="end">Elasticsearch Serverless</text>
-<text x="1270" y="596" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="19" font-weight="700" fill="#0B64DD" text-anchor="middle">food_labels  ·  food_log</text>
-<rect x="1004" y="630" width="532" height="52" rx="12" fill="#1C1E23"/>
-<text x="1270" y="662" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#fff" text-anchor="middle">POST /food_labels/_search</text>
-<text x="1270" y="712" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14.5" font-weight="400" fill="#605F60" text-anchor="middle">full-text search, typo-tolerant, highlighted matches</text>
+<text x="1270" y="578" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="19" font-weight="700" fill="#0B64DD" text-anchor="middle">food_labels  ·  food_log</text>
+<rect x="1004" y="596" width="532" height="64" rx="12" fill="#fff" stroke="#009191" stroke-width="2.5"/>
+<g transform="translate(1016,610) scale(0.3)"><use href="#ji"/></g>
+<text x="1100" y="621" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="700" fill="#1C1E23" text-anchor="start">meaning: semantic_text</text>
+<text x="1100" y="645" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="12.5" font-weight="700" fill="#009191" text-anchor="start">→ .jina-embeddings-v5-text-small, automatic</text>
+<rect x="1004" y="674" width="532" height="52" rx="12" fill="#1C1E23"/>
+<text x="1270" y="706" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#fff" text-anchor="middle">POST /food_labels/_search</text>
+<text x="1270" y="750" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13.5" font-weight="500" fill="#605F60" text-anchor="middle">same API, new query: { "semantic": { "field": "meaning" } }</text>
 <line x1="342" y1="290" x2="468" y2="290" stroke="#0B64DD" stroke-width="3" marker-end="url(#h-0B64DD)"/>
 <rect x="340.0" y="240" width="130" height="28" rx="14.0" fill="#0B64DD"/>
 <text x="405" y="258.68" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#fff" text-anchor="middle">/api/capture</text>
@@ -67,11 +70,11 @@
 <text x="890" y="328" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#009191" text-anchor="middle">Markdown</text>
 <rect x="804.0" y="362" width="172" height="32" rx="16.0" fill="#FEC514"/>
 <text x="890" y="383.04" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="700" fill="#1C1E23" text-anchor="middle">≈ 3 s per read</text>
+<rect x="804.0" y="476" width="172" height="28" rx="14.0" fill="#0B64DD"/>
+<text x="890" y="494.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="12.5" font-weight="700" fill="#fff" text-anchor="middle">PUT /food_labels</text>
+<text x="890" y="526" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="11.5" font-weight="500" fill="#605F60" text-anchor="middle">one time only</text>
 <line x1="802" y1="560" x2="978" y2="560" stroke="#0B64DD" stroke-width="3" marker-end="url(#h-0B64DD)"/>
 <text x="890" y="548" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#0B64DD" text-anchor="middle">index</text>
-<rect x="804.0" y="574" width="172" height="32" rx="16.0" fill="#FEC514"/>
-<text x="890" y="594.68" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#1C1E23" text-anchor="middle">searchable in ~1 s</text>
-<line x1="978" y1="690" x2="802" y2="690" stroke="#EF5098" stroke-width="3" marker-end="url(#h-EF5098)"/>
-<text x="890" y="678" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#EF5098" text-anchor="middle">hits</text>
-<text x="48" y="780" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="12.5" font-weight="400" fill="#605F60" text-anchor="start">≈ 3 s: median read over 50 label photos (README). ~1 s: index refresh at demo volume. Jina OCR: open weights, non-commercial licence. Logos belong to their owners.</text>
+<line x1="978" y1="700" x2="802" y2="700" stroke="#EF5098" stroke-width="3" marker-end="url(#h-EF5098)"/>
+<text x="890" y="688" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#EF5098" text-anchor="middle">hits</text>
 </svg>

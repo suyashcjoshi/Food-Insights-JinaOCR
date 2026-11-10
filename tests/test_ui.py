@@ -70,9 +70,12 @@ def server(tmp_path_factory):
     mp.setattr(
         es,
         "search",
-        lambda q, a, lang, size, kind: {"total": len(docs), "hits": list(docs.values())},
+        lambda q, a, lang, size, kind, mode="words": {
+            "total": len(docs),
+            "hits": list(docs.values()),
+        },
     )
-    mp.setattr(es, "aggregate", lambda q, a, lang, kind: {"total": len(docs), "allergens": [], "languages": []})  # fmt: skip
+    mp.setattr(es, "aggregate", lambda q, a, lang, kind, mode="words": {"total": len(docs), "allergens": [], "languages": []})  # fmt: skip
     entries: list[dict] = []
     mp.setattr(es, "update_doc", lambda doc_id, fields: docs[doc_id].update(fields))
     mp.setattr(es, "log_entry", entries.append)
@@ -412,7 +415,9 @@ def test_library_search_shows_the_matching_text_with_the_words_marked(page, monk
         "id": "x1", "product_name": "Schokolade", "language": "de", "image_path": "captures/none.jpg",
         "highlight": {"unverified_text": ["**Kann** Spuren von <mark>Erdnüssen</mark> enthalten <br>"]},
     }  # fmt: skip
-    monkeypatch.setattr(es, "search", lambda q, a, lang, size, kind: {"total": 1, "hits": [hit]})
+    monkeypatch.setattr(
+        es, "search", lambda q, a, lang, size, kind, mode="words": {"total": 1, "hits": [hit]}
+    )
     page.ev("document.querySelector('[data-tab=library]').click()")
     page.ev(
         "(() => { const q = document.querySelector('#q'); q.value = 'erdnuss'; q.dispatchEvent(new Event('input')); })()"

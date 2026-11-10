@@ -118,11 +118,12 @@ async def search(
     language: str | None = None,
     size: int = Query(24, ge=1, le=100),
     allergen_kind: str | None = None,
+    mode: Annotated[str, Query(pattern="^(words|meaning)$")] = "words",
 ) -> dict:
     _check_kind(allergen_kind)
     try:
         return await asyncio.to_thread(
-            es.search, q, allergen or [], language or None, size, allergen_kind
+            es.search, q, allergen or [], language or None, size, allergen_kind, mode
         )
     except Exception as exc:
         raise HTTPException(503, f"search unavailable: {str(exc)[:ERROR_DETAIL_CHARS]}") from exc
@@ -134,11 +135,12 @@ async def aggs(
     allergen: Annotated[list[str] | None, Query()] = None,
     language: str | None = None,
     allergen_kind: str | None = None,
+    mode: Annotated[str, Query(pattern="^(words|meaning)$")] = "words",
 ) -> dict:
     _check_kind(allergen_kind)
     try:
         return await asyncio.to_thread(
-            es.aggregate, q, allergen or [], language or None, allergen_kind
+            es.aggregate, q, allergen or [], language or None, allergen_kind, mode
         )
     except Exception as exc:
         raise HTTPException(

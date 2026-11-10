@@ -17,6 +17,7 @@ const filtersActive = () =>
 function filterParams() {
   const params = new URLSearchParams({ size: PAGE_SIZE });
   if (searchText()) params.set("q", searchText());
+  if (searchText() && $("#q-meaning").checked) params.set("mode", "meaning");
   for (const allergen of state.lib.allergens) params.append("allergen", allergen);
   if (state.lib.kind) params.set("allergen_kind", state.lib.kind);
   if (state.lib.language !== "all") params.set("language", state.lib.language);

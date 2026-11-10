@@ -85,7 +85,10 @@ MAPPING = {
         },  # front | typed (a guess from the front, or what you typed)
         "edited_fields": {"type": "keyword"},  # numbers a person corrected by hand
         "raw_markdown": {"type": "text"},
-        "plain_text": {"type": "text"},
+        # copy_to feeds a semantic_text field: Elasticsearch embeds it with the default inference
+        # endpoint (.jina-embeddings-v5-text-small on Serverless) and search by meaning needs nothing else.
+        "plain_text": {"type": "text", "copy_to": "meaning"},
+        "meaning": {"type": "semantic_text"},
         "telemetry": {
             "properties": {
                 "endpoint": {"type": "keyword"},
@@ -197,9 +200,18 @@ def _filters(allergens: list[str], language: str | None, kind: str | None = None
     return out
 
 
-def _query(q: str, filters: list[dict]) -> dict:
-    """Text match (typo-tolerant) when `q` is given, everything otherwise; `filters` never score."""
-    text = {"multi_match": {"query": q, "fields": SEARCH_FIELDS, "fuzziness": "AUTO"}}
+MODES = ("words", "meaning")
+
+
+def _query(q: str, filters: list[dict], mode: str = "words") -> dict:
+    """Match `q` when given, everything otherwise; `filters` never score.
+
+    `words` is typo-tolerant keyword match. `meaning` is a semantic query on the `meaning` field: it
+    ranks every label by closeness, so it is an opt-in mode and not mixed into the default search."""
+    if mode == "meaning":
+        text = {"semantic": {"field": "meaning", "query": q}}
+    else:
+        text = {"multi_match": {"query": q, "fields": SEARCH_FIELDS, "fuzziness": "AUTO"}}
     return {"bool": {"must": [text] if q.strip() else [{"match_all": {}}], "filter": filters}}
 
 
@@ -212,11 +224,12 @@ def _search(
     language: str | None = None,
     size: int = 24,
     kind: str | None = None,
+    mode: str = "words",
 ) -> dict:
-    """Keyword search with optional allergen / kind / language filters."""
+    """Keyword (or, with `mode="meaning"`, semantic) search with optional allergen / kind / language filters."""
     body = client().search(
         index=index_name(),
-        query=_query(q, _filters(allergens or [], language, kind)),
+        query=_query(q, _filters(allergens or [], language, kind), mode),
         sort=[{"_score": "desc"}, {"captured_at": "desc"}]
         if q.strip()
         else [{"captured_at": "desc"}],
@@ -253,12 +266,13 @@ def _aggregate(
     allergens: list[str] | None = None,
     language: str | None = None,
     kind: str | None = None,
+    mode: str = "words",
 ) -> dict:
     """Counts for the Library panel: allergen mentions as read (split contains / may contain),
     languages."""
     body = client().search(
         index=index_name(),
-        query=_query(q, _filters(allergens or [], language, kind)),
+        query=_query(q, _filters(allergens or [], language, kind), mode),
         size=0,
         aggs={
             "allergens": {

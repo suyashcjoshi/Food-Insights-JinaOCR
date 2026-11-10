@@ -12,7 +12,7 @@ It is a three-step pipeline, **Extract → Ingest → Search**, all inside Elast
 2. **Ingest**: the app parses the numbers and saves one document per label in an Elasticsearch index
    (`food_labels`), and one entry per thing you eat in a second small index (`food_log`). Extraction
    does not store anything by itself; saving is a separate `index` call.
-3. **Search**: the Library searches and counts the labels, and Today adds up your day with one aggregation.
+3. **Search**: the Library searches the labels by words or by meaning and counts them, and Today adds up your day with one aggregation.
 
 One key, one bill.
 
@@ -23,21 +23,9 @@ Your limits are your own, and the app only says "over" or "under".
 
 <p align="center"><img src="docs/architecture.svg" alt="Architecture: browser, FastAPI app, Jina OCR on Elastic Inference Service, Elasticsearch Serverless" width="100%"></p>
 
-```
- WEB FRONT END           FASTAPI APP             ELASTIC CLOUD
-┌──────────────────┐    ┌───────────┐
-│ Foreign language │    │           │  photo     ┌──────────────────────────────────────────────┐
-│ Odd shapes       │───▶│  EXTRACT  │ ─────────▶ │ JINA OCR  (Elastic Inference Service)        │
-│ Tables           │    │           │ ◀───────── │ POST /_inference/document_extraction/        │
-│                  │    │           │  Markdown  │      .jina-reader          ≈ 3 s per read    │
-│                  │    │           │            └──────────────────────────────────────────────┘
-│ /api/capture ────┼───▶│  INGEST   │ ─────────▶ ┌──────────────────────────────────────────────┐
-│                  │    │           │  index     │ ELASTICSEARCH  food_labels · food_log        │
-│ search box       │    │           │            │ searchable in ~1 s                           │
-│ /api/search ─────┼───▶│  SEARCH   │ ◀───────── │ POST /food_labels/_search                    │
-│ ◀── results ─────┼────│           │  hits      └──────────────────────────────────────────────┘
-└──────────────────┘    └───────────┘
-```
+Search works two ways: by words (typo-tolerant) or, with the **Search by meaning** box ticked, by meaning:
+a `semantic_text` field that Elasticsearch fills and embeds by itself (on Serverless the default is
+`.jina-embeddings-v5-text-small`), so "sweet breakfast spread" finds a French *pâte à tartiner* label.
 
 It is built for a phone (and shows as a phone-width column on a laptop). Three tabs:
 
@@ -46,8 +34,8 @@ It is built for a phone (and shows as a phone-width column on a laptop). Three t
 - **Today**: net carbs and calories eaten today against your own limits (defaults 100 g net carbs and
   1800 kcal; change them behind the sliders icon), with how much is left, how many entries, and the list
   of what you ate. A total turns red once it goes over.
-- **Library**: search what you have read (each result shows the matching text, with the words marked),
-  filter by allergen, see counts.
+- **Library**: search what you have read by words (each result shows the matching text, with the words
+  marked) or, with **Search by meaning** ticked, by meaning; filter by allergen, see counts.
 
 After a read, the **Result** opens as a sheet: **net carbs** and **calories** big, the photo, the other
 numbers, and the unverified text, with the Extract → Ingest → Search strip under the name. You can edit the
@@ -101,7 +89,7 @@ make test                # tests, no network needed
 ```
 
 The first read after a quiet period can take a few minutes while the model wakes up. The `food_labels` and
-`food_log` indices are created on first use. Writes refresh the index straight away so a saved label or log
+`food_log` indices are created on first use (an index made by an older version has no `meaning` field: delete it and it is recreated). Writes refresh the index straight away so a saved label or log
 entry shows up at once (fine for a demo; a busy app would batch writes).
 
 `document_extraction` is in preview on Elasticsearch Serverless: your project needs the `.jina-reader`
