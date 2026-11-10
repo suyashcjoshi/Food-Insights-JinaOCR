@@ -23,22 +23,6 @@ Your limits are your own, and the app only says "over" or "under".
 
 <p align="center"><img src="docs/architecture.svg" alt="Architecture: browser, FastAPI app, Jina OCR on Elastic Inference Service, Elasticsearch Serverless" width="100%"></p>
 
-```
- WEB FRONT END           FASTAPI APP             ELASTIC CLOUD
-┌──────────────────┐    ┌───────────┐
-│ Foreign language │    │           │  photo     ┌──────────────────────────────────────────────┐
-│ Odd shapes       │───▶│  EXTRACT  │ ─────────▶ │ JINA OCR  (Elastic Inference Service)        │
-│ Tables           │    │           │ ◀───────── │ POST /_inference/document_extraction/        │
-│                  │    │           │  Markdown  │      .jina-reader          ≈ 3 s per read    │
-│                  │    │           │            └──────────────────────────────────────────────┘
-│ /api/capture ────┼───▶│  INGEST   │ ─────────▶ ┌──────────────────────────────────────────────┐
-│                  │    │           │  index     │ ELASTICSEARCH  food_labels · food_log        │
-│ search box       │    │           │            │ searchable in ~1 s                           │
-│ /api/search ─────┼───▶│  SEARCH   │ ◀───────── │ POST /food_labels/_search                    │
-│ ◀── results ─────┼────│           │  hits      └──────────────────────────────────────────────┘
-└──────────────────┘    └───────────┘
-```
-
 It is built for a phone (and shows as a phone-width column on a laptop). Three tabs:
 
 - **Capture**: take two photos of a pack. The **front** (optional) gives the product name; the **back**
