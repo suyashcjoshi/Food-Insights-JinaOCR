@@ -110,7 +110,9 @@ def test_facility_phrases_are_precautionary():
 
 def test_mapping_types():
     p = es.MAPPING["properties"]
-    num = [v for v in p["nutrients"]["properties"].values() if v["type"] != "keyword"]
+    num = [
+        v for v in p["nutrients"]["properties"].values() if v["type"] not in ("keyword", "boolean")
+    ]
     assert all(v["type"] == "float" for v in num)
     assert p["nutrients"]["properties"]["carbohydrates_g"]["type"] == "float"
     assert p["language"]["type"] == "keyword"
@@ -368,7 +370,7 @@ def test_patch_only_allows_the_carb_fibre_and_calorie_numbers(stored):
 @pytest.fixture
 def diary_api(api, monkeypatch):
     label = {"id": "abc", "product_name": "Greek yogurt", "image_path": "captures/abc.jpg",
-             "nutrients": {"carbohydrates_g": 27.0, "fiber_g": 4.0, "energy_kcal": 150.0, "basis": "serving"}}  # fmt: skip
+             "nutrients": {"carbohydrates_g": 27.0, "fiber_g": 4.0, "energy_kcal": 150.0, "basis": "serving", "carb_includes_fibre": True}}  # fmt: skip
     logged = []
     monkeypatch.setattr(es, "get_doc", lambda doc_id: label if doc_id == "abc" else None)
     monkeypatch.setattr(es, "log_entry", logged.append)
@@ -382,7 +384,8 @@ def test_adding_to_today_snapshots_net_carbs_and_calories_times_portions(diary_a
     entry = r.json()
     assert entry["net_carbs_g"] == 46.0  # (27 - 4) x 2
     assert entry["calories_kcal"] == 300
-    assert entry["fiber_read"] is True and entry["day"] == "2026-11-06"
+    assert entry["net_method"] == "minus_fibre" and entry["day"] == "2026-11-06"
+    assert entry["unit_text"] == "serving"
     assert diary_api.logged[0]["label_id"] == "abc"
 
 

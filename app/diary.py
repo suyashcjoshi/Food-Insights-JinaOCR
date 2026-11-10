@@ -27,22 +27,59 @@ def is_valid_day(value: str) -> bool:
     return True
 
 
-def net_carbs(nutrients: dict) -> tuple[float | None, bool]:
-    """(net carbs in g, fiber_was_read). Net = carbohydrate - fiber, never below zero.
+# How a net carbs figure was worked out (stored on each log entry, shown on screen).
+MINUS_FIBRE = (
+    "minus_fibre"  # US-style panel: total carbohydrate includes fibre, so fibre is subtracted
+)
+ALREADY_NET = "already_excludes_fibre"  # EU / UK panel: carbohydrate already excludes fibre
+FIBRE_NOT_READ = (
+    "fibre_not_read"  # US-style panel but no fibre figure: the full carbohydrate counts
+)
+FORMAT_UNKNOWN = "format_unknown"  # cannot tell the format: the full carbohydrate counts
 
-    No carbohydrate read -> (None, False). Carbohydrate but no fiber -> the total carbohydrate with
-    fiber_was_read False, so a missing fiber figure never makes the number look lower than it is."""
+
+def net_carbs(nutrients: dict) -> tuple[float | None, str | None]:
+    """(net carbs in g, how it was worked out).
+
+    Net carbs = carbohydrate - fibre ONLY when the printed carbohydrate includes fibre (a US or Canada
+    "Total Carbohydrate"). EU / UK panels already exclude fibre, so subtracting it again would undercount.
+    When the format is unknown the full carbohydrate counts: a figure that is too high is safer than one
+    that is too low against a limit. No carbohydrate read -> (None, None)."""
     carbs = nutrients.get("carbohydrates_g")
     if carbs is None:
-        return None, False
+        return None, None
+    includes_fibre = nutrients.get("carb_includes_fibre")
+    if includes_fibre is False:
+        return round(carbs, 1), ALREADY_NET
+    if includes_fibre is None:
+        return round(carbs, 1), FORMAT_UNKNOWN
     fiber = nutrients.get("fiber_g")
-    return round(max(carbs - (fiber or 0.0), 0.0), 1), fiber is not None
+    if fiber is None:
+        return round(carbs, 1), FIBRE_NOT_READ
+    return round(max(carbs - fiber, 0.0), 1), MINUS_FIBRE
+
+
+def portion_unit(nutrients: dict) -> tuple[str, float | None]:
+    """(what one portion is, its size in g or ml when the panel is per 100 g / 100 ml, else None).
+
+    The panel as printed is one portion: per 100 g, per serving, or unknown. Saying so on screen stops
+    "1 portion" being mistaken for "1 bar"."""
+    basis = nutrients.get("basis")
+    if basis == "100g":
+        return "100 g", 100.0
+    if basis == "100ml":
+        return "100 ml", 100.0
+    if basis == "serving":
+        serving = nutrients.get("serving_text")
+        return (f"serving ({serving})" if serving else "serving"), None
+    return "the panel as printed", None
 
 
 def entry_from_label(label: dict, portions: float, day: str) -> dict:
     """The log entry for eating `portions` of a stored label on `day`."""
     nutrients = label.get("nutrients") or {}
-    net, fiber_read = net_carbs(nutrients)
+    net, method = net_carbs(nutrients)
+    unit_text, unit_size = portion_unit(nutrients)
     kcal = nutrients.get("energy_kcal")
     entry = {
         "id": uuid.uuid4().hex,
@@ -55,7 +92,11 @@ def entry_from_label(label: dict, portions: float, day: str) -> dict:
         "basis": nutrients.get("basis"),
         "net_carbs_g": None if net is None else round(net * portions, 1),
         "calories_kcal": None if kcal is None else round(kcal * portions),
-        "fiber_read": fiber_read,
+        "net_method": method,
+        "unit_text": unit_text,
+        "amount_text": None
+        if unit_size is None
+        else f"{round(unit_size * portions):g} {unit_text.split()[-1]}",
         "edited": bool(label.get("edited_fields")),
     }
     return {k: v for k, v in entry.items() if v is not None}

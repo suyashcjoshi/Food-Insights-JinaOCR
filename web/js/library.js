@@ -83,7 +83,9 @@ function renderLibrary(search, aggs) {
   }
   renderLanguageChips();
   renderCount(search);
-  $("#grid").replaceChildren(...search.hits.map(renderTile));
+  const tiles = search.hits.map(renderTile);
+  $("#grid").classList.toggle("list", tiles.some((tile) => tile.classList.contains("result")));
+  $("#grid").replaceChildren(...tiles);
   renderEmptyState(search.total);
   renderAllergenBars(aggs);
 }
@@ -119,12 +121,26 @@ function renderLanguageChips() {
   })));
 }
 
+/** The text that matched the search, with the matching words marked. Built from text nodes only:
+ *  Elasticsearch wraps matches in <mark>, and everything else is shown literally, never as HTML. */
+function snippetNode(doc) {
+  const hit = doc.highlight?.unverified_text?.[0] || doc.highlight?.plain_text?.[0];
+  if (!hit) return null;
+  const parts = hit.split(/<\/?mark>/); // even positions are plain text, odd positions are matches
+  // the reader's own HTML tags and Markdown marks are not shown, and line breaks become spaces
+  const plain = (text) => text.replace(/<[^>]+>/g, " ").replace(/(\*\*|__|`)/g, "").replace(/^#{1,6}\s+/gm, "").replace(/\s+/g, " ");
+  return el("span", { class: "snip" }, parts.map((text, i) => (i % 2 ? el("mark", { text: plain(text) }) : plain(text))));
+}
+
 function renderTile(doc) {
   const image = imageUrl(doc);
-  return el("button", { type: "button", class: "tile", "aria-label": doc.product_name || "Label", onclick: () => openLabel(doc.id) },
+  const snippet = searchText() ? snippetNode(doc) : null; // with a search active, results show why they matched
+  return el("button", { type: "button", class: "tile" + (snippet ? " result" : ""), "aria-label": doc.product_name || "Label", onclick: () => openLabel(doc.id) },
     el("span", { class: "sq", style: image ? `background-image:url('${encodeURI(image)}')` : null }),
-    el("span", { class: "nm", text: doc.product_name || "Unnamed label" }),
-    el("span", { class: "lg", text: doc.language ? langName(doc.language) : "Language not set" }));
+    el("span", { class: "meta" },
+      el("span", { class: "nm", text: doc.product_name || "Unnamed label" }),
+      el("span", { class: "lg", text: doc.language ? langName(doc.language) : "Language not set" }),
+      snippet));
 }
 
 // ---------- allergen bars ----------

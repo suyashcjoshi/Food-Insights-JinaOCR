@@ -63,6 +63,9 @@ MAPPING = {
             "properties": {
                 **{k: {"type": "float"} for k in NUTRIENT_FIELDS},
                 "serving_text": {"type": "keyword"},
+                "carb_includes_fibre": {
+                    "type": "boolean"
+                },  # US-style panel: yes; EU / UK per 100 g: no
                 "per": {"type": "keyword"},  # serving | 100g
                 "basis": {"type": "keyword"},  # 100g | 100ml | serving | unknown
             }
@@ -107,7 +110,9 @@ LOG_MAPPING = {
         "basis": {"type": "keyword"},
         "net_carbs_g": {"type": "float"},
         "calories_kcal": {"type": "float"},
-        "fiber_read": {"type": "boolean"},
+        "net_method": {"type": "keyword"},  # how net carbs were worked out (see diary.py)
+        "unit_text": {"type": "keyword"},  # what one portion is, e.g. "100 g" or "serving (170 g)"
+        "amount_text": {"type": "keyword"},  # portions x unit when that is a weight, e.g. "150 g"
         "edited": {"type": "boolean"},
     }
 }

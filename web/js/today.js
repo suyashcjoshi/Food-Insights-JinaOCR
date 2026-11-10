@@ -16,6 +16,7 @@ function totalCard({ key, label, value, limit, unit }) {
       el("span", { class: "t-unit", text: ` ${unit}` })),
     el("span", { class: "t-limit", text: `of ${limit} ${unit}` }),
     el("span", { class: "meter" }, el("i", { style: `width:${fill}%` })),
+    el("span", { class: "t-remain", text: over ? `${fmt(value - limit)} ${unit} over` : `${fmt(limit - value)} ${unit} left` }),
     el("span", { class: "t-flag", text: over ? "Over your limit" : "" }));
 }
 
@@ -28,10 +29,17 @@ export function renderTotals(summary, target = $("#today-totals")) {
 
 // ---------- the entries ----------
 
+/** "1.5 × 100 g = 150 g": what was eaten, in the unit the panel uses. */
 function portionsText(entry) {
-  const count = entry.portions === 1 ? "1 portion" : `${fmt(entry.portions)} portions`;
-  return entry.basis === "100g" ? `${count} of 100 g` : count;
+  const unit = entry.unit_text || "portion";
+  return `${fmt(entry.portions)} × ${unit}${entry.amount_text ? ` = ${entry.amount_text}` : ""}`;
 }
+
+// Only the cases worth a note: the others are the normal, expected ones.
+const NET_NOTES = {
+  fibre_not_read: "Fibre not read, so the full carbohydrate is counted",
+  format_unknown: "Label format unclear, so fibre is not subtracted",
+};
 
 function entryRow(entry) {
   const image = imageUrl(entry);
@@ -44,7 +52,7 @@ function entryRow(entry) {
     el("span", { class: "e-text" },
       el("span", { class: "e-name", text: entry.product_name || "Unnamed label" }),
       el("span", { class: "e-sub", text: `${portionsText(entry)} · ${nutrition}` }),
-      entry.fiber_read === false ? el("span", { class: "e-note", text: "Fibre not read, so full carbohydrate is counted" }) : null,
+      NET_NOTES[entry.net_method] ? el("span", { class: "e-note", text: NET_NOTES[entry.net_method] }) : null,
       entry.edited ? el("span", { class: "e-note", text: "Numbers edited by hand" }) : null),
     el("button", { type: "button", class: "icon remove", "aria-label": `Remove ${entry.product_name || "entry"}`, text: "×", onclick: () => removeEntry(entry.id) }));
 }
@@ -74,6 +82,8 @@ export async function loadToday() {
     const summary = await fetchToday();
     renderTotals(summary);
     $("#today-entries").replaceChildren(...summary.entries.map(entryRow));
+    const count = summary.totals.entries;
+    $("#today-count").textContent = count ? `· ${count} ${count === 1 ? "entry" : "entries"}` : "";
     $("#today-empty").hidden = summary.entries.length > 0;
     $("#today-note").textContent = "";
   } catch {

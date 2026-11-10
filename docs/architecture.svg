@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 800" width="1600" height="800" role="img"><title>Food Insights architecture</title>
+<defs>
+<marker id="h-0B64DD" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#0B64DD"/></marker>
+<marker id="h-009191" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#009191"/></marker>
+<marker id="h-EF5098" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#EF5098"/></marker>
+<marker id="h-605F60" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#605F60"/></marker>
+<g id="el" transform="translate(155,-383.3)"><path fill="#FFFFFF" d="M81.6 506.8c0-19.8-12.3-37.2-30.8-43.9 0.8-4.2 1.2-8.4 1.2-12.7 0-36.9-30-66.9-66.8-66.9 -21.6 0-41.6 10.3-54.2 27.7 -6.2-4.8-13.8-7.4-21.7-7.4 -19.6 0-35.5 15.9-35.5 35.5 0 4.3 0.8 8.5 2.2 12.4 -18.4 6.6-31 24.3-31 44 0 19.9 12.4 37.3 30.9 44 -0.8 4.1-1.2 8.4-1.2 12.7 0 36.8 29.9 66.7 66.7 66.7 21.6 0 41.6-10.4 54.1-27.8 6.2 4.9 13.8 7.6 21.7 7.6 19.6 0 35.5-15.9 35.5-35.5 0-4.3-0.8-8.5-2.2-12.4C68.9 544.2 81.6 526.5 81.6 506.8"/><path fill="#FED10A" d="M-62 484.8l51.8 23.6L42 462.6c0.8-3.8 1.1-7.5 1.1-11.5 0-32.2-26.2-58.4-58.4-58.4 -19.3 0-37.2 9.5-48.1 25.4l-8.7 45.1L-62 484.8z"/><path fill="#24BBB1" d="M-115.6 539.6c-0.8 3.8-1.1 7.7-1.1 11.7 0 32.3 26.3 58.5 58.6 58.5 19.4 0 37.5-9.6 48.4-25.6l8.6-44.9 -11.5-22 -52-23.7L-115.6 539.6z"/><path fill="#EF5098" d="M-115.9 450l35.5 8.4 7.8-40.3c-4.8-3.7-10.8-5.7-17-5.7 -15.4 0-28 12.5-28 28C-117.6 443.7-117 447-115.9 450"/><path fill="#17A8E0" d="M-119 458.5c-15.8 5.2-26.9 20.4-26.9 37.1 0 16.3 10.1 30.8 25.2 36.6l49.8-45 -9.1-19.5L-119 458.5z"/><path fill="#93C83E" d="M-0.7 584.2c4.9 3.7 10.8 5.8 16.9 5.8 15.4 0 28-12.5 28-28 0-3.4-0.6-6.7-1.7-9.7L7.1 544 -0.7 584.2z"/><path fill="#0779A1" d="M6.5 534.7l39 9.1c15.9-5.2 26.9-20.4 26.9-37.2 0-16.2-10.1-30.8-25.2-36.5l-51 44.7L6.5 534.7z"/><path d="M175.8 548.8l4.7-0.5 0.3 9.6c-12.4 1.7-23 2.6-31.8 2.6 -11.7 0-20-3.4-24.9-10.2s-7.3-17.4-7.3-31.7c0-28.6 11.4-42.9 34.1-42.9 11 0 19.2 3.1 24.6 9.2s8.1 15.8 8.1 28.9l-0.7 9.3h-53.8c0 9 1.6 15.7 4.9 20 3.3 4.3 8.9 6.5 17 6.5C159.2 549.8 167.4 549.5 175.8 548.8zM171.4 513.5c0-10-1.6-17.1-4.8-21.2 -3.2-4.1-8.4-6.2-15.6-6.2s-12.7 2.2-16.3 6.5c-3.6 4.3-5.5 11.3-5.6 20.9H171.4z"/><path d="M200.6 559V442h12.2v117H200.6z"/><path d="M289.9 502.1v40.1c0 4.1 10.1 4.9 10.1 4.9l-0.6 10.8c-8.6 0-15.7 0.7-20-3.4 -9.8 4.3-19.5 6.1-29.3 6.1 -7.5 0-13.2-2.1-17.1-6.4 -3.9-4.2-5.9-10.3-5.9-18.3 0-7.9 2-13.8 6-17.5 4-3.7 10.3-6.1 18.9-6.9l25.6-2.4v-7c0-5.5-1.2-9.5-3.6-11.9 -2.4-2.4-5.7-3.6-9.8-3.6h-32.1v-10.8h31.3c9.2 0 15.9 2.1 20.1 6.4C287.8 486.4 289.9 493.1 289.9 502.1zM239.7 535.3c0 10 4.1 15 12.4 15 7.4 0 14.7-1.2 21.8-3.7l3.7-1.3v-26.9l-24.1 2.3c-4.9 0.4-8.4 1.8-10.6 4.2C240.7 527.3 239.7 530.8 239.7 535.3z"/><path d="M337.6 486.7c-11.8 0-17.8 4.1-17.8 12.4 0 3.8 1.4 6.5 4.1 8.1s8.9 3.2 18.6 4.9c9.7 1.7 16.5 4 20.5 7.1 4 3 6 8.7 6 17.1 0 8.4-2.7 14.5-8.1 18.4 -5.4 3.9-13.2 5.9-23.6 5.9 -6.7 0-29.2-2.5-29.2-2.5l0.7-10.6c12.9 1.2 22.3 2.2 28.6 2.2 6.3 0 11.1-1 14.4-3s5-5.4 5-10.1 -1.4-7.9-4.2-9.6c-2.8-1.7-9-3.3-18.6-4.8s-16.4-3.7-20.4-6.7c-4-2.9-6-8.4-6-16.3 0-7.9 2.8-13.8 8.4-17.6 5.6-3.8 12.6-5.7 20.9-5.7 6.6 0 29.6 1.7 29.6 1.7v10.7C354.4 487.6 344.5 486.7 337.6 486.7z"/><path d="M428 488.1h-25.9v39c0 9.3 0.7 15.5 2 18.4 1.4 2.9 4.6 4.4 9.7 4.4l14.5-1 0.8 10.1c-7.3 1.2-12.8 1.8-16.6 1.8 -8.5 0-14.3-2.1-17.6-6.2s-4.9-12-4.9-23.6v-42.9h-11.6v-10.6H390v-25h12.1v24.9H428V488.1z"/><path d="M445 459v-14.1h12.2v14.2L445 459 445 459zM445 559v-81.5h12.2V559H445z"/><path d="M510.2 475.8c3.6 0 9.7 0.7 18.3 2l3.9 0.5 -0.5 9.9c-8.7-1-15.1-1.5-19.2-1.5 -9.2 0-15.5 2.2-18.8 6.6s-5 12.6-5 24.5c0 11.9 1.5 20.2 4.6 24.9 3.1 4.7 9.5 7 19.3 7l19.2-1.5 0.5 10.1c-10.1 1.5-17.7 2.3-22.7 2.3 -12.7 0-21.5-3.3-26.3-9.8s-7.3-17.5-7.3-33 2.6-26.4 7.8-32.6C489.3 479 498 475.8 510.2 475.8z"/></g><g id="ji"><circle fill="#EB6161" cx="15.3" cy="84.5" r="15.3"/>
+  <path fill="#009191" d="M63.5 36.3c2 0 3.6 1.6 3.6 3.6l-.2 29.3c0 16.7-13.4 30.3-30.1 30.6h-.5V69.3 40c0-2 1.8-3.7 3.8-3.7h23.4zm47 0c2 0 3.6 1.6 3.6 3.6v41c0 2-1.6 3.6-3.6 3.6H87.1c-2 0-3.6-1.6-3.6-3.6V39.9c0-2 1.6-3.6 3.6-3.6h23.4zm36.8-.1h.5c15 .2 27.2 12.3 27.6 27.3v17.3c0 2-1.6 3.6-3.6 3.6H134c-2 0-3.6-1.6-3.6-3.6V39.8c0-2 1.6-3.6 3.6-3.6h13.3zM209.2 84c-12.6-.8-22.7-11.3-22.7-24.1 0-13.3 10.8-24.1 24.1-24.1 12.8 0 23.3 10 24.1 22.7v21.9c0 2-1.6 3.6-3.6 3.6h-21.9z"/>
+  <circle fill="#FBCB67" cx="98.749" cy="15.3" r="15.3"/></g>
+<filter id="sh" x="-5%" y="-5%" width="110%" height="115%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#1C1E23" flood-opacity=".08"/></filter></defs>
+<rect width="1600" height="800" fill="#F5F7FA"/>
+<text x="48" y="76" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="40" font-weight="700" fill="#1C1E23" text-anchor="start">Food Insights</text>
+<text x="48" y="110" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="18" font-weight="400" fill="#605F60" text-anchor="start">Hard-to-read food labels → nutrition numbers you can search</text>
+<g transform="translate(1250,42) scale(0.22)"><use href="#el"/></g><line x1="1425" y1="40" x2="1425" y2="100" stroke="#D3DAE6" stroke-width="2"/><g transform="translate(1450,38) scale(0.55)"><use href="#ji"/></g>
+<rect x="40" y="170" width="300" height="570" rx="18" fill="#fff" stroke="#D3DAE6" stroke-width="1.5" filter="url(#sh)"/>
+<text x="190" y="220" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="24" font-weight="700" fill="#1C1E23" text-anchor="middle">Web front end</text>
+<text x="190" y="245" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="400" fill="#605F60" text-anchor="middle">plain HTML + JS</text>
+<rect x="58" y="270" width="264" height="84" rx="14" fill="#F0FAFA" stroke="#009191" stroke-width="1.5"/>
+<text x="96" y="322" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="700" fill="#009191" text-anchor="middle">文A</text>
+<text x="136" y="307" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="18" font-weight="700" fill="#1C1E23" text-anchor="start">Foreign languages</text>
+<text x="136" y="330" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="13.5" font-weight="400" fill="#605F60" text-anchor="start">Français · 日本語</text>
+<rect x="58" y="370" width="264" height="84" rx="14" fill="#F0FAFA" stroke="#009191" stroke-width="1.5"/>
+<path d="M80 396c0-8 32-8 32 0v32c0 8-32 8-32 0z M80 396c0 8 32 8 32 0" fill="none" stroke="#009191" stroke-width="2.5"/>
+<text x="136" y="407" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="18" font-weight="700" fill="#1C1E23" text-anchor="start">Odd shapes</text>
+<text x="136" y="430" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="13.5" font-weight="400" fill="#605F60" text-anchor="start">tins, bottles, curved</text>
+<rect x="58" y="470" width="264" height="84" rx="14" fill="#F0FAFA" stroke="#009191" stroke-width="1.5"/>
+<g stroke="#009191" stroke-width="2.5" fill="none"><rect x="78" y="494" width="36" height="36" rx="3"/><path d="M78 506h36M78 518h36M90 494v36"/></g>
+<text x="136" y="507" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="18" font-weight="700" fill="#1C1E23" text-anchor="start">Tables</text>
+<text x="136" y="530" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="13.5" font-weight="400" fill="#605F60" text-anchor="start">nutrition panels</text>
+<rect x="58" y="580" width="264" height="44" rx="22" fill="#fff" stroke="#D3DAE6" stroke-width="1.5"/>
+<text x="84" y="608" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="400" fill="#8A94A6" text-anchor="start">search the library…</text>
+<text x="190" y="690" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="400" fill="#605F60" text-anchor="middle">your own photos</text>
+<rect x="470" y="170" width="330" height="570" rx="18" fill="#fff" stroke="#D3DAE6" stroke-width="1.5" filter="url(#sh)"/>
+<text x="635" y="220" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="24" font-weight="700" fill="#1C1E23" text-anchor="middle">FastAPI app</text>
+<rect x="494" y="250" width="282" height="80" rx="14" fill="#009191"/>
+<text x="635" y="299" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" fill="#fff" text-anchor="middle">EXTRACT</text>
+<rect x="494" y="520" width="282" height="80" rx="14" fill="#0B64DD"/>
+<text x="635" y="569" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" fill="#fff" text-anchor="middle">INGEST</text>
+<rect x="494" y="620" width="282" height="80" rx="14" fill="#EF5098"/>
+<text x="635" y="669" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" fill="#fff" text-anchor="middle">SEARCH</text>
+<rect x="980" y="160" width="580" height="290" rx="18" fill="#F0FAFA" stroke="#009191" stroke-width="4" filter="url(#sh)"/>
+<g transform="translate(1008,190) scale(0.72)"><use href="#ji"/></g>
+<text x="1196" y="232" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="50" font-weight="700" fill="#1C1E23" text-anchor="start">Jina OCR</text>
+<text x="1198" y="266" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="18" font-weight="500" fill="#605F60" text-anchor="start">on Elastic Inference Service</text>
+<rect x="1004" y="300" width="532" height="56" rx="12" fill="#1C1E23"/>
+<text x="1270" y="335" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="16.5" font-weight="700" fill="#fff" text-anchor="middle">POST /_inference/document_extraction/.jina-reader</text>
+<text x="1270" y="400" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" fill="#009191" text-anchor="middle">photo in → Markdown out</text>
+<text x="1270" y="428" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="400" fill="#605F60" text-anchor="middle">tables, other languages, odd shapes</text>
+<rect x="980" y="480" width="580" height="260" rx="18" fill="#F1F6FE" stroke="#0B64DD" stroke-width="3" filter="url(#sh)"/>
+<g transform="translate(1008,502) scale(0.19)"><use href="#el"/></g>
+<text x="1532" y="538" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="20" font-weight="700" fill="#1C1E23" text-anchor="end">Elasticsearch Serverless</text>
+<text x="1270" y="596" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="19" font-weight="700" fill="#0B64DD" text-anchor="middle">food_labels  ·  food_log</text>
+<rect x="1004" y="630" width="532" height="52" rx="12" fill="#1C1E23"/>
+<text x="1270" y="662" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#fff" text-anchor="middle">POST /food_labels/_search</text>
+<text x="1270" y="712" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14.5" font-weight="400" fill="#605F60" text-anchor="middle">full-text search, typo-tolerant, highlighted matches</text>
+<line x1="342" y1="290" x2="468" y2="290" stroke="#0B64DD" stroke-width="3" marker-end="url(#h-0B64DD)"/>
+<rect x="340.0" y="240" width="130" height="28" rx="14.0" fill="#0B64DD"/>
+<text x="405" y="258.68" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#fff" text-anchor="middle">/api/capture</text>
+<line x1="342" y1="650" x2="468" y2="650" stroke="#EF5098" stroke-width="3" marker-end="url(#h-EF5098)"/>
+<rect x="340.0" y="600" width="130" height="28" rx="14.0" fill="#EF5098"/>
+<text x="405" y="618.68" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#fff" text-anchor="middle">/api/search</text>
+<line x1="468" y1="715" x2="342" y2="715" stroke="#605F60" stroke-width="3" marker-end="url(#h-605F60)"/>
+<text x="405" y="705" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="600" fill="#605F60" text-anchor="middle">results</text>
+<line x1="802" y1="270" x2="978" y2="270" stroke="#009191" stroke-width="3" marker-end="url(#h-009191)"/>
+<text x="890" y="258" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#009191" text-anchor="middle">photo</text>
+<line x1="978" y1="340" x2="802" y2="340" stroke="#009191" stroke-width="3" marker-end="url(#h-009191)"/>
+<text x="890" y="328" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#009191" text-anchor="middle">Markdown</text>
+<rect x="804.0" y="362" width="172" height="32" rx="16.0" fill="#FEC514"/>
+<text x="890" y="383.04" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="700" fill="#1C1E23" text-anchor="middle">≈ 3 s per read</text>
+<line x1="802" y1="560" x2="978" y2="560" stroke="#0B64DD" stroke-width="3" marker-end="url(#h-0B64DD)"/>
+<text x="890" y="548" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#0B64DD" text-anchor="middle">index</text>
+<rect x="804.0" y="574" width="172" height="32" rx="16.0" fill="#FEC514"/>
+<text x="890" y="594.68" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#1C1E23" text-anchor="middle">searchable in ~1 s</text>
+<line x1="978" y1="690" x2="802" y2="690" stroke="#EF5098" stroke-width="3" marker-end="url(#h-EF5098)"/>
+<text x="890" y="678" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#EF5098" text-anchor="middle">hits</text>
+<text x="48" y="780" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="12.5" font-weight="400" fill="#605F60" text-anchor="start">≈ 3 s: median read over 50 label photos (README). ~1 s: index refresh at demo volume. Jina OCR: open weights, non-commercial licence. Logos belong to their owners.</text>
+</svg>

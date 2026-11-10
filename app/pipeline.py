@@ -69,6 +69,11 @@ def build_doc(
         **res.nutrients,
         **({"energy_kj": res.energy_kj} if res.energy_kj is not None else {}),
         **({"serving_text": res.serving_text} if res.serving_text else {}),
+        **(
+            {"carb_includes_fibre": res.carb_includes_fibre}
+            if res.carb_includes_fibre is not None
+            else {}
+        ),
         "per": res.per,
         "basis": res.basis,
     }

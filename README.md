@@ -21,19 +21,22 @@ Your limits are your own, and the app only says "over" or "under".
 
 ## How it works
 
+<p align="center"><img src="docs/architecture.svg" alt="Architecture: browser, FastAPI app, Jina OCR on Elastic Inference Service, Elasticsearch Serverless" width="100%"></p>
+
 ```
-  BROWSER (web/)               YOUR APP (FastAPI)                 CLOUD
- ┌──────────────┐  photos  ┌──────────────────────────┐
- │ Capture      │ ───────▶ │ 1  rotate + shrink       │
- │ Result       │          │ 2  EXTRACT  ─────────────┼──▶ Elastic Inference Service
- │ Today        │          │    (app/eis.py)          │    (document_extraction) ──┐
- │ Library      │          │ 3  find the numbers  ◀───┼──────────── Markdown ──────┘
- │              │ ◀─────── │    (app/parse.py)        │
- │              │  result  │ 4  INGEST  ──────────────┼──▶ Elasticsearch  (food_labels, food_log)
- │              │          │                          │
- │              │ search ─▶│ SEARCH  /api/search,     │
- │              │  today ─▶│         /api/today  ─────┼──▶ Elasticsearch  (Library, daily totals)
- └──────────────┘          └──────────────────────────┘
+ WEB FRONT END           FASTAPI APP             ELASTIC CLOUD
+┌──────────────────┐    ┌───────────┐
+│ Foreign language │    │           │  photo     ┌──────────────────────────────────────────────┐
+│ Odd shapes       │───▶│  EXTRACT  │ ─────────▶ │ JINA OCR  (Elastic Inference Service)        │
+│ Tables           │    │           │ ◀───────── │ POST /_inference/document_extraction/        │
+│                  │    │           │  Markdown  │      .jina-reader          ≈ 3 s per read    │
+│                  │    │           │            └──────────────────────────────────────────────┘
+│ /api/capture ────┼───▶│  INGEST   │ ─────────▶ ┌──────────────────────────────────────────────┐
+│                  │    │           │  index     │ ELASTICSEARCH  food_labels · food_log        │
+│ search box       │    │           │            │ searchable in ~1 s                           │
+│ /api/search ─────┼───▶│  SEARCH   │ ◀───────── │ POST /food_labels/_search                    │
+│ ◀── results ─────┼────│           │  hits      └──────────────────────────────────────────────┘
+└──────────────────┘    └───────────┘
 ```
 
 It is built for a phone (and shows as a phone-width column on a laptop). Three tabs:
@@ -41,14 +44,18 @@ It is built for a phone (and shows as a phone-width column on a laptop). Three t
 - **Capture**: take two photos of a pack. The **front** (optional) gives the product name; the **back**
   has the nutrition panel.
 - **Today**: net carbs and calories eaten today against your own limits (defaults 100 g net carbs and
-  1800 kcal; change them behind the sliders icon). A total turns red once it goes over.
-- **Library**: search what you have read, filter by allergen, see counts.
+  1800 kcal; change them behind the sliders icon), with how much is left, how many entries, and the list
+  of what you ate. A total turns red once it goes over.
+- **Library**: search what you have read (each result shows the matching text, with the words marked),
+  filter by allergen, see counts.
 
-After a read, the **Result** opens as a sheet: **net carbs** (carbohydrate minus fibre) and **calories**
-big, the photo, the other numbers, and the unverified text, with the Extract → Ingest → Search strip under
-the name. You can edit the name, language and the carbohydrate, fibre and calorie numbers by hand (the app
-marks them "edited"), choose how many portions you ate, and tap **Add to today**. The **Raw request &
-response** button shows the exact API call.
+After a read, the **Result** opens as a sheet: **net carbs** and **calories** big, the photo, the other
+numbers, and the unverified text, with the Extract → Ingest → Search strip under the name. You can edit the
+name, language and the carbohydrate, fibre and calorie numbers by hand (the app marks them "edited"). Pick
+how much you ate with the stepper, which always says what one portion is ("1.5 × 100 g = 150 g", or "1 ×
+serving (6 oz (170g))"), see what today would become, and tap **Add to today**. The **Raw request & response**
+button shows the exact API call. On a wide window the photo sits on the left, the result on the right and
+the raw details underneath, which suits a screen recording.
 
 | Capture | Result | Today | Raw request & response | Library |
 |---|---|---|---|---|
@@ -61,8 +68,11 @@ The Library photos are Open Food Facts samples (see References).
 - **Nutrition numbers** come straight from what the model read, and the photo is always shown next
   to them: check them against the pack. If one is wrong, edit it; the label is then marked as edited
   by hand, and so is any log entry made from it.
-- **Net carbs** are carbohydrate minus fibre. If fibre was not read, the full carbohydrate is counted and
-  the app says "fibre not read", so a missing figure never makes the number look lower than it is.
+- **Net carbs depend on the label format.** A US / Canada "Total Carbohydrate" includes fibre, so fibre is
+  subtracted. An EU / UK "Carbohydrate" already excludes fibre (it is listed on its own row), so nothing is
+  subtracted; doing so would undercount. If the format is unclear, or a US-style label has no fibre figure,
+  the full carbohydrate is counted and the app says so: a number that is too high is safer than one that is
+  too low against a limit. Sugar alcohols are not subtracted.
 - **The product name** from the front photo is a guess (the first readable line). The model can invent
   words where the frame cuts the text off, so it is always editable.
 - **Ingredients and allergens** are shown as **unverified text**. The model guesses at anything cut

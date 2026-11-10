@@ -1,6 +1,6 @@
 // The Result sheet: one label's numbers, the unverified text, allergen chips, the pipeline strip,
 // the extracted text, and the raw request/response. It opens over whichever tab is showing.
-import { $, $$, closeLow, cleanText, el, fmt, imageUrl, netCarbs, openLow, seconds, state, todayKey } from "./util.js";
+import { $, $$, amountLine, closeLow, cleanText, el, fmt, getLimits, imageUrl, netCarbs, netCarbsNote, openLow, seconds, state, todayKey } from "./util.js";
 import { fetchToday, renderTotals } from "./today.js";
 
 // ---------- nutrient rows ----------
@@ -106,11 +106,8 @@ function bigFigure(label, value, unit, sub) {
 
 function renderHero(nutrients) {
   const net = netCarbs(nutrients);
-  const carbsSub = net.value === null ? "Carbohydrate not read from this photo."
-    : net.fiberRead ? `${fmt(nutrients.carbohydrates_g)} carbs − ${fmt(nutrients.fiber_g)} fibre`
-    : `${fmt(nutrients.carbohydrates_g)} carbs, fibre not read`;
   $("#r-hero").replaceChildren(
-    bigFigure("Net carbs", net.value, "g", carbsSub),
+    bigFigure("Net carbs", net.value, "g", netCarbsNote(nutrients, net.method)),
     bigFigure("Calories", nutrients.energy_kcal, "kcal", "per portion shown"));
 }
 
@@ -328,20 +325,44 @@ const MAX_PORTIONS = 20;
 const PORTION_STEP = 0.5;
 let portions = 1;
 
+let todaySoFar = null; // what has been logged today, for the "if you add this" preview
+
 function renderLog(nutrients) {
   const canLog = netCarbs(nutrients).value !== null || nutrients.energy_kcal !== undefined;
   $("#r-log").hidden = !canLog;
   portions = 1;
-  showPortions(nutrients);
   $("#log-done").hidden = true;
   $("#log-add").disabled = false;
   $("#log-add").textContent = "Add to today";
+  todaySoFar = null;
+  showPortions(nutrients);
+  if (canLog) {
+    fetchToday().then((summary) => { todaySoFar = summary; showPreview(); }).catch(() => showPreview());
+  }
 }
 
 function showPortions(nutrients = state.current.doc.nutrients || {}) {
   $("#log-portions").textContent = fmt(portions);
-  const unit = portions === 1 ? "portion" : "portions";
-  $("#log-basis").textContent = `${unit} · ${basisText(nutrients)}`;
+  // say exactly what one portion is, so "1 portion" is never mistaken for "1 bar"
+  $("#log-basis").textContent = amountLine(portions, nutrients);
+  showPreview();
+}
+
+/** "If you add this, today: 67.5 of 100 g net carbs, 375 of 1800 kcal" before the person commits. */
+function showPreview() {
+  const preview = $("#log-preview");
+  const nutrients = state.current?.doc.nutrients || {};
+  if (!todaySoFar || !$("#log-done").hidden) {
+    preview.hidden = true;
+    return;
+  }
+  const limits = getLimits();
+  const carbs = todaySoFar.totals.net_carbs_g + (netCarbs(nutrients).value ?? 0) * portions;
+  const kcal = todaySoFar.totals.calories_kcal + (nutrients.energy_kcal ?? 0) * portions;
+  const over = carbs > limits.netCarbsG || kcal > limits.calories;
+  preview.className = "preview" + (over ? " over" : "");
+  preview.textContent = `If you add this, today: ${fmt(Math.round(carbs * 10) / 10)} of ${limits.netCarbsG} g net carbs · ${fmt(Math.round(kcal))} of ${limits.calories} kcal${over ? ". Over your limit" : ""}`;
+  preview.hidden = false;
 }
 
 function stepPortions(delta) {
@@ -365,6 +386,7 @@ async function addToToday() {
     renderTotals(await fetchToday(), $("#log-totals"));
     message.textContent = `Added ${fmt(portions)} ${portions === 1 ? "portion" : "portions"} to today.`;
     $("#log-done").hidden = false;
+    showPreview();
   } catch {
     message.textContent = "Couldn't add that. Try again.";
     $("#log-done").hidden = false;

@@ -6,7 +6,7 @@ Demo app + benchmark for an Elastic Community YouTube video. Pipeline: Extract �
 Photograph a food label, send it to the EIS `document_extraction` task (`.jina-reader`, Jina OCR),
 parse the nutrition panel into fields, index everything in Elasticsearch Serverless, and search it.
 Two photos per pack (front: name, optional; back: the panel). A daily log (`food_log` index) adds up net
-carbs (carbohydrate − fibre) and calories against the person's own limits, which live in the browser.
+carbs and calories against the person's own limits, which live in the browser.
 There is no barcode check and no "Verified" badge: both were removed on purpose.
 
 ## Stack (keep it this small)
@@ -69,8 +69,13 @@ already exist (`.jina-reader` for document_extraction), nothing to PUT.
 - No barcode check and no verification badge (removed on purpose; do not re-add).
 - The app compares totals with the person's own limits and never advises: no "you should", no targets we
   choose, no recommendations. Defaults (100 g net carbs, 1800 kcal) are only starting values the person edits.
-- Net carbs = carbohydrate − fibre, never below 0; if fibre was not read, count the full carbohydrate and say
-  so. The rule lives in `app/diary.py` (and is mirrored in `web/js/util.js` for display): change both.
+- Net carbs subtract fibre ONLY when the printed carbohydrate includes it (US / Canada "Total Carbohydrate"
+  panels, found by `parse.py` as `carb_includes_fibre`). EU / UK "Carbohydrate" already excludes fibre (EU
+  Regulation 1169/2011), so subtracting it again undercounts. Unknown format, or US-style with no fibre figure:
+  count the full carbohydrate and say so. Never below 0. The rule lives in `app/diary.py` (mirrored in
+  `web/js/util.js` for display): change both, and the tests.
+- Quantity has no grams input, but "1 portion" is always spelled out (`portion_unit`: "100 g", "serving (170 g)",
+  "the panel as printed") so it is never mistaken for "1 bar".
 - A log entry is a snapshot (label numbers × portions); hand edits are stored in `edited_fields`, never
   silently mixed with what the model read. The product name from the front photo is a guess: always editable.
 - Index writes use `refresh=True` (0.9 s) because Serverless refreshes every ~5 s and `wait_for` made each

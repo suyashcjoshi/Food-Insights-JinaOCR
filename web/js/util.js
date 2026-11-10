@@ -113,12 +113,54 @@ export function saveLimits(limits) {
 
 // ---------- net carbs and the day ----------
 
-/** Net carbs = carbohydrate - fibre (never below 0). Same rule as app/diary.py, which does the real adding up. */
+// How net carbs were worked out. Same rules as app/diary.py, which does the real adding up.
+export const NET = {
+  MINUS_FIBRE: "minus_fibre", // US-style panel: total carbohydrate includes fibre, so subtract it
+  ALREADY_NET: "already_excludes_fibre", // EU / UK panel: carbohydrate already excludes fibre
+  FIBRE_NOT_READ: "fibre_not_read", // US-style, no fibre figure: the full carbohydrate counts
+  FORMAT_UNKNOWN: "format_unknown", // cannot tell the format: the full carbohydrate counts
+};
+
+const round1 = (n) => Math.round(n * 10) / 10;
+
+/** { value, method }. Subtract fibre only when the printed carbohydrate includes it (US / Canada). */
 export function netCarbs(nutrients) {
   const carbs = nutrients.carbohydrates_g;
-  if (carbs === undefined || carbs === null) return { value: null, fiberRead: false };
+  if (carbs === undefined || carbs === null) return { value: null, method: null };
+  const includesFibre = nutrients.carb_includes_fibre;
+  if (includesFibre === false) return { value: round1(carbs), method: NET.ALREADY_NET };
+  if (includesFibre === undefined || includesFibre === null) return { value: round1(carbs), method: NET.FORMAT_UNKNOWN };
   const fiber = nutrients.fiber_g;
-  return { value: Math.round(Math.max(carbs - (fiber || 0), 0) * 10) / 10, fiberRead: fiber !== undefined && fiber !== null };
+  if (fiber === undefined || fiber === null) return { value: round1(carbs), method: NET.FIBRE_NOT_READ };
+  return { value: round1(Math.max(carbs - fiber, 0)), method: NET.MINUS_FIBRE };
+}
+
+/** The line under the big net carbs figure: what was done, in plain words. */
+export function netCarbsNote(nutrients, method) {
+  const carbs = fmt(nutrients.carbohydrates_g);
+  return {
+    [NET.MINUS_FIBRE]: `${carbs} carbs − ${fmt(nutrients.fiber_g)} fibre (US-style label)`,
+    [NET.ALREADY_NET]: `${carbs} carbs. This label already leaves fibre out`,
+    [NET.FIBRE_NOT_READ]: `${carbs} carbs, fibre not read`,
+    [NET.FORMAT_UNKNOWN]: `${carbs} carbs. Label format unclear, so fibre is not subtracted`,
+  }[method] || "Carbohydrate not read from this photo.";
+}
+
+/** What one portion is: the panel as printed. { text, size } where size is the g / ml when per 100. */
+export function portionUnit(nutrients) {
+  if (nutrients.basis === "100g") return { text: "100 g", size: 100 };
+  if (nutrients.basis === "100ml") return { text: "100 ml", size: 100 };
+  if (nutrients.basis === "serving") {
+    return { text: nutrients.serving_text ? `serving (${nutrients.serving_text})` : "serving", size: null };
+  }
+  return { text: "the panel as printed", size: null };
+}
+
+/** "1.5 × 100 g = 150 g", or "1.5 × serving (6 oz (170g))" when the size is not a plain weight. */
+export function amountLine(portions, nutrients) {
+  const unit = portionUnit(nutrients);
+  const times = `${fmt(portions)} × ${unit.text}`;
+  return unit.size === null ? times : `${times} = ${fmt(portions * unit.size)} ${unit.text.split(" ").pop()}`;
 }
 
 /** The person's local date as 2026-11-06: what "today" means for the daily log. */

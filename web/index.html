@@ -59,7 +59,7 @@
       <div class="scroll" id="today-scroll">
         <p id="today-date" class="caption"></p>
         <div id="today-totals" class="totals"></div>
-        <h2 class="sec">Eaten today</h2>
+        <h2 class="sec">Eaten today <span id="today-count" class="count"></span></h2>
         <div id="today-entries" class="entries"></div>
         <p id="today-empty" class="secondary" hidden>Nothing logged yet. Read a label, then tap Add to today.</p>
         <p id="today-note" class="msg" role="status"></p>
@@ -165,6 +165,7 @@
           <button id="log-plus" class="stepbtn" type="button" aria-label="More portions">+</button>
           <span id="log-basis" class="secondary"></span>
         </div>
+        <p id="log-preview" class="preview" hidden></p>
         <button id="log-add" class="primary" type="button">Add to today</button>
         <div id="log-done" hidden>
           <p id="log-msg" class="secondary"></p>

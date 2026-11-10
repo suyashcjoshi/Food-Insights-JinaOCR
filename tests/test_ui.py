@@ -375,3 +375,70 @@ def test_today_turns_red_over_your_limit_and_the_limits_are_behind_the_gear(page
     )
     assert page.ev("!!document.querySelector('#today-totals [data-total=calories].over')") is False
     assert "10" in page.ev("localStorage.getItem('fi.limits')")  # remembered
+
+
+def test_stepper_says_what_a_portion_is_and_previews_the_day_before_you_add(page, tmp_path):
+    read_back_photo(page, tmp_path)
+    # the yogurt is a US-style panel "per serving": say so, and say what 1 means
+    assert "US-style" in page.ev("document.querySelector('#r-hero .big-sub').textContent")
+    assert page.ev("document.querySelector('#log-basis').textContent").startswith("1 × serving")
+    assert page.wait(
+        "!document.querySelector('#log-preview').hidden"
+    )  # fetched today's total first
+    assert "If you add this, today:" in page.ev(
+        "document.querySelector('#log-preview').textContent"
+    )
+    page.ev("document.querySelector('#log-plus').click()")
+    assert page.ev("document.querySelector('#log-basis').textContent").startswith("1.5 × serving")
+    page.ev("document.querySelector('#log-add').click()")
+    assert page.wait("!document.querySelector('#log-done').hidden")
+    assert (
+        page.ev("document.querySelector('#log-preview').hidden") is True
+    )  # now it is really in the total
+
+    page.ev("document.querySelector('#log-see').click()")
+    assert page.wait("document.querySelectorAll('#today-entries .entry').length >= 1")
+    assert "left" in page.ev(
+        "document.querySelector('#today-totals [data-total=carbs] .t-remain').textContent"
+    )
+    assert "entr" in page.ev("document.querySelector('#today-count').textContent")
+    assert page.ev(
+        "[...document.querySelectorAll('#today-entries .e-sub')].some(e => e.textContent.includes('1.5 × serving'))"
+    )
+
+
+def test_library_search_shows_the_matching_text_with_the_words_marked(page, monkeypatch):
+    hit = {
+        "id": "x1", "product_name": "Schokolade", "language": "de", "image_path": "captures/none.jpg",
+        "highlight": {"unverified_text": ["**Kann** Spuren von <mark>Erdnüssen</mark> enthalten <br>"]},
+    }  # fmt: skip
+    monkeypatch.setattr(es, "search", lambda q, a, lang, size, kind: {"total": 1, "hits": [hit]})
+    page.ev("document.querySelector('[data-tab=library]').click()")
+    page.ev(
+        "(() => { const q = document.querySelector('#q'); q.value = 'erdnuss'; q.dispatchEvent(new Event('input')); })()"
+    )
+    assert page.wait("!!document.querySelector('#grid .tile .snip mark')")
+    assert page.ev("document.querySelector('#grid .tile .snip mark').textContent") == "Erdnüssen"
+    assert "Kann Spuren von" in page.ev("document.querySelector('#grid .tile .snip').textContent")
+    assert "<br>" not in page.ev(
+        "document.querySelector('#grid .tile .snip').textContent"
+    )  # shown as text, no markup
+    assert page.ev("document.querySelector('#grid').classList.contains('list')") is True
+
+
+def test_a_wide_window_puts_the_photo_left_and_the_result_right(page, tmp_path):
+    page.call(
+        "Emulation.setDeviceMetricsOverride",
+        width=1280,
+        height=800,
+        deviceScaleFactor=1,
+        mobile=False,
+    )
+    read_back_photo(page, tmp_path)
+    assert page.ev("getComputedStyle(document.querySelector('#r-scroll')).display") == "grid"
+    photo_x = page.ev("document.querySelector('#r-thumb').getBoundingClientRect().left")
+    result_x = page.ev("document.querySelector('#r-hero').getBoundingClientRect().left")
+    raw_top = page.ev("document.querySelector('#r-raw').getBoundingClientRect().top")
+    hero_bottom = page.ev("document.querySelector('#r-hero').getBoundingClientRect().bottom")
+    assert photo_x < result_x  # photo left, result right
+    assert raw_top > hero_bottom  # the raw details sit underneath

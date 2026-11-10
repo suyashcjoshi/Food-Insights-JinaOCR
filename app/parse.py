@@ -202,6 +202,9 @@ class ParseResult:
     energy_from_kj: bool = False  # kcal was derived from kJ; an explicit kcal row replaces it
     suspect_reasons: list[str] = field(default_factory=list)
     aligned: bool = False  # values were re-assigned by order-aware alignment
+    # Does the printed "carbohydrate" already include fibre? US / Canada "Total Carbohydrate": yes.
+    # EU / UK "Carbohydrate" (per 100 g): no, fibre is listed separately. None: cannot tell.
+    carb_includes_fibre: bool | None = None
 
     @property
     def panel_found(self) -> bool:
@@ -811,6 +814,22 @@ def _set_basis(res: ParseResult, md: str) -> None:
     res.per = "100g" if res.basis.startswith("100") else "serving"
 
 
+# US / Canada panels print "Total Carbohydrate" with "Dietary Fiber" inside it.
+US_STYLE_RE = re.compile(
+    r"total\s+carbohydrate|dietary\s+fib(?:er|re)|nutrition\s+facts|total\s+carb\b", re.IGNORECASE
+)
+
+
+def _carb_includes_fibre(md: str, basis: str) -> bool | None:
+    """True for a US-style panel; False for an EU / UK per-100 g panel (EU rules count carbohydrate
+    without fibre, and list fibre on its own row); None when the format cannot be told."""
+    if US_STYLE_RE.search(md):
+        return True
+    if basis in ("100g", "100ml"):
+        return False
+    return None
+
+
 def parse(md: str, *, force_column: int | None = None) -> ParseResult:
     """Markdown / HTML table text of a label photo to nutrient fields plus `unverified_text`."""
     md = md or ""
@@ -842,6 +861,7 @@ def parse(md: str, *, force_column: int | None = None) -> ParseResult:
         return swapped
 
     _set_basis(res, md)
+    res.carb_includes_fibre = _carb_includes_fibre(md, res.basis)
     _align(rows, res)
     _check_consistency(res)
     return res
