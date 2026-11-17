@@ -35,12 +35,8 @@ Look for `"task_type": "document_extraction"` with `"inference_id": ".jina-reade
 
 ## 2. Extract text from an image
 
-The example is a photo of a TREK protein flapjack, `docs/demo-trek-label.jpg` (my own photo, taken at an angle with
-a glare). Make the base64 string first and keep it on the clipboard:
-```bash
-echo "data:image/jpeg;base64,$(base64 -i docs/demo-trek-label.jpg)" | pbcopy
-```
-Then paste it in place of `PASTE_BASE64_HERE`:
+The example is a photo of a TREK protein flapjack (my own photo, taken at an angle with a glare), hosted in this
+repo as `docs/demo-trek-label.jpg`.
 ```
 POST _inference/document_extraction/.jina-reader?filter_path=document_extraction.content
 {
@@ -48,15 +44,15 @@ POST _inference/document_extraction/.jina-reader?filter_path=document_extraction
     {
       "content": {
         "type": "image",
-        "format": "base64",
-        "value": "PASTE_BASE64_HERE"
+        "format": "url",
+        "value": "https://raw.githubusercontent.com/suyashcjoshi/Food-Insights-JinaOCR/main/docs/demo-trek-label.jpg"
       }
     }
   ],
   "task_settings": { "parameters": { "preset": "ocr" } }
 }
 ```
-What came back when I ran it (the same text the app saved; about 3.7 s):
+What came back when I ran it on this photo with the app (about 3.7 s):
 ```
 | NUTRITION INFO | Per 100g | Per 50g |
 | --- | --- | --- |
@@ -74,8 +70,10 @@ The reader is not perfect: the printed row says `Manganese (%RI*)` with `0.90mg`
 `mo`. The response has one item per input, in order: `content` (the Markdown), `format` and a `metadata` object
 that can change. `filter_path` keeps only `content`. Nothing is stored and there is no `usage`.
 
-Instead of base64 you can pass a public image link: set `"format": "url"` and `"value": "https://..."`. The
-service fetches it, so it must be reachable from the internet (a phone photo on your laptop is not).
+The link must be the image file itself (`raw.githubusercontent.com/...`), not the GitHub page that shows it
+(`github.com/.../blob/...`): the reader would read the web page instead. Base64 is also supported, with
+`"format": "base64"` and `"value": "data:image/jpeg;base64,..."`; the app uses it because phone photos have no
+public link.
 Images already default to OCR, and the text was the same with and without the `ocr` preset; the app sends it
 explicitly. A scanned PDF (`"type": "pdf"`) with no text layer returns an empty result without it.
 
