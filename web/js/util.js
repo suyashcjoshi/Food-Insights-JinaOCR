@@ -201,3 +201,37 @@ export function wireSheets() {
   $("#backdrop").addEventListener("click", closeLow);
   $$(".sheet.low .close").forEach((button) => button.addEventListener("click", closeLow));
 }
+
+// ---------- full-size photo viewer ----------
+
+/** Show a photo large over everything; tap anywhere or press Esc to close. */
+export function openImage(src, alt = "") {
+  if (!src) return;
+  const box = $("#lightbox");
+  const img = $("#lightbox-img");
+  img.src = src;
+  img.alt = alt;
+  box.hidden = false;
+}
+
+export function closeImage() {
+  $("#lightbox").hidden = true;
+  $("#lightbox-img").removeAttribute("src");
+}
+
+export function wireLightbox() {
+  $("#lightbox").addEventListener("click", closeImage);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("#lightbox").hidden) closeImage();
+  });
+}
+
+/** Make an <img> open full size when tapped, without triggering its parent button. */
+export function enlargeOnTap(img) {
+  img.classList.add("zoomable");
+  img.addEventListener("click", (e) => {
+    if (!img.getAttribute("src")) return;
+    e.stopPropagation();
+    openImage(img.src, img.alt);
+  });
+}

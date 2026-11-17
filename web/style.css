@@ -829,3 +829,10 @@ button.chip[aria-checked="true"] {
   .sheet-actions { padding-inline: 32px; }
   .sheet-actions .primary { max-width: 420px; justify-self: center; }
 }
+
+/* full-size photo viewer */
+.lightbox { position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, 0.92); display: flex; align-items: center; justify-content: center; padding: 12px; }
+.lightbox[hidden] { display: none; }
+.lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.lightbox-close { position: absolute; top: 10px; right: 12px; width: 44px; height: 44px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.18); color: #fff; font-size: 28px; line-height: 1; cursor: pointer; }
+.zoomable { cursor: zoom-in; }

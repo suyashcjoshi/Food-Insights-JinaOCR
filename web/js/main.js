@@ -6,7 +6,7 @@
 //   today.js    the Today screen (totals against your limits)
 //   main.js     this file: tabs, the Capture screen, and the wiring
 //
-import { $, $$, state, closeLow, isLowSheetOpen, openLow, wireSheets } from "./util.js";
+import { $, $$, enlargeOnTap, openImage, state, wireLightbox, closeLow, isLowSheetOpen, openLow, wireSheets } from "./util.js";
 import { loadToday, wireToday } from "./today.js";
 import { closeResult, isResultOpen, openResult, wireResult } from "./result.js";
 import { loadLibrary, wireLibrary } from "./library.js";
@@ -80,11 +80,13 @@ function forget(slot) {
 
 function takePhoto(file) {
   if (!file) return;
-  forget(state.slot);
-  state.photos[state.slot] = { file, url: URL.createObjectURL(file) };
+  const slot = state.slot;
+  forget(slot);
+  state.photos[slot] = { file, url: URL.createObjectURL(file) };
   if (state.slot === "front") state.slot = "back"; // front done: now the nutrition panel
   setStatus("");
   renderCapture();
+  openImage(state.photos[slot].url, slot === "front" ? "Front of the pack" : "Back of the pack"); // show what was just taken, full size
 }
 
 function resetCapture() {
@@ -140,6 +142,8 @@ function chooseSlot(slot) {
 }
 
 function wireCapture() {
+  wireLightbox();
+  for (const id of ["#front-thumb", "#back-thumb", "#r-thumb", "#r-thumb-front"]) enlargeOnTap($(id));
   for (const input of [$("#cam"), $("#pick")]) {
     input.addEventListener("change", () => {
       takePhoto(input.files[0]);
