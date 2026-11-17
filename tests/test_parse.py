@@ -75,6 +75,19 @@ def test_multilingual_synonyms(line, key, value):
     assert parse(line).nutrients[key] == value
 
 
+@pytest.mark.parametrize(
+    "line, value",
+    [
+        ("Manganese (mg): 0.450 (23%)", 0.45),
+        ("Manganèse 1,2 mg", 1.2),
+        ("Mangan 2 mg", 2),
+        ("Manganeso 500 mcg", 0.5),
+    ],
+)
+def test_manganese(line, value):
+    assert parse(line).nutrients["manganese_mg"] == pytest.approx(value)
+
+
 def test_unit_normalisation():
     res = parse("Sodium 0.29 g\nCalcium 1200 mcg\nVitamin D 2 µg\nCholesterol 10 mg")
     assert res.nutrients["sodium_mg"] == 290

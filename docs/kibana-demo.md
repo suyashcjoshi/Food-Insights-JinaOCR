@@ -5,7 +5,7 @@ them in order. It uses an index called `food_labels_demo`, so it never touches t
 explains them and has the Discover (ES|QL) queries for the app's real indices.
 
 Sample labels are Open Food Facts photos (data ODbL, images CC BY-SA). `docs/demo-label.png` is a small
-generated label used for the base64 example.
+generated label used for the base64 example, and `docs/demo-trek-label.jpg` is my own photo.
 
 ## What each request is
 
@@ -35,6 +35,12 @@ Look for `"task_type": "document_extraction"` with `"inference_id": ".jina-reade
 
 ## 2. Extract text from an image
 
+The example is a photo of a TREK protein flapjack, `docs/demo-trek-label.jpg` (my own photo, taken at an angle with
+a glare). Make the base64 string first and keep it on the clipboard:
+```bash
+echo "data:image/jpeg;base64,$(base64 -i docs/demo-trek-label.jpg)" | pbcopy
+```
+Then paste it in place of `PASTE_BASE64_HERE`:
 ```
 POST _inference/document_extraction/.jina-reader?filter_path=document_extraction.content
 {
@@ -42,22 +48,34 @@ POST _inference/document_extraction/.jina-reader?filter_path=document_extraction
     {
       "content": {
         "type": "image",
-        "format": "url",
-        "value": "https://images.openfoodfacts.org/images/products/807/680/952/3547/nutrition_de.380.full.jpg"
+        "format": "base64",
+        "value": "PASTE_BASE64_HERE"
       }
     }
   ],
   "task_settings": { "parameters": { "preset": "ocr" } }
 }
 ```
-The response has one item per input, in order: `content` (the Markdown), `format` and a `metadata` object that
-can change. `filter_path` keeps only `content`. Nothing is stored and there is no `usage`.
-
-For a base64 image, set `"format": "base64"` and `"value": "data:image/png;base64,..."`. Build the string from
-a file with:
-```bash
-echo "data:image/jpeg;base64,$(base64 -i photo.jpg)" | pbcopy
+What came back when I ran it (the same text the app saved; about 3.7 s):
 ```
+| NUTRITION INFO | Per 100g | Per 50g |
+| --- | --- | --- |
+| Energy | 1962 kJ/468 kcal | 981 kJ/234 kcal |
+| Fat | 21g | 11g |
+| of which saturates | 9.4g | 4.7g |
+| Carbohydrate | 49g | 25g |
+| of which sugars | 24g | 12g |
+| Fibre | 3.6g | 1.8g |
+| Protein | 19g | 9.5g |
+| Salt | 0.60g | 0.30g |
+| Manganese (%Rf*) | 0.90mo (45%) | 0.45mo (23%) |
+```
+The reader is not perfect: the printed row says `Manganese (%RI*)` with `0.90mg`, and it returned `%Rf*` and
+`mo`. The response has one item per input, in order: `content` (the Markdown), `format` and a `metadata` object
+that can change. `filter_path` keeps only `content`. Nothing is stored and there is no `usage`.
+
+Instead of base64 you can pass a public image link: set `"format": "url"` and `"value": "https://..."`. The
+service fetches it, so it must be reachable from the internet (a phone photo on your laptop is not).
 Images already default to OCR, and the text was the same with and without the `ocr` preset; the app sends it
 explicitly. A scanned PDF (`"type": "pdf"`) with no text layer returns an empty result without it.
 

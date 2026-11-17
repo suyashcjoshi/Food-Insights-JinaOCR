@@ -84,7 +84,9 @@ function renderLibrary(search, aggs) {
   }
   renderLanguageChips();
   renderCount(search);
-  const tiles = search.hits.map(renderTile);
+  const meaning = searchText() !== "" && $("#q-meaning").checked;
+  const top = search.hits[0]?._score ?? 0; // hits come best first
+  const tiles = search.hits.map((doc) => renderTile(doc, meaning ? { top } : null));
   $("#grid").classList.toggle("list", tiles.some((tile) => tile.classList.contains("result")));
   $("#grid").replaceChildren(...tiles);
   renderEmptyState(search.total);
@@ -133,14 +135,25 @@ function snippetNode(doc) {
   return el("span", { class: "snip" }, parts.map((text, i) => (i % 2 ? el("mark", { text: plain(text) }) : plain(text))));
 }
 
-function renderTile(doc) {
+/** Meaning search ranks every label, so say how close each one is, relative to the best match. */
+function closeness(score, top) {
+  const gap = top - score;
+  if (gap <= 0.0005) return { cls: "best", text: "Closest match" };
+  if (gap <= 0.03) return { cls: "near", text: "Close" };
+  if (gap <= 0.07) return { cls: "related", text: "Related" };
+  return { cls: "weak", text: "Weak match" };
+}
+
+function renderTile(doc, ranking) {
   const image = imageUrl(doc);
   const snippet = searchText() ? snippetNode(doc) : null; // with a search active, results show why they matched
-  return el("button", { type: "button", class: "tile" + (snippet ? " result" : ""), "aria-label": doc.product_name || "Label", onclick: () => openLabel(doc.id) },
+  const close = ranking && typeof doc._score === "number" ? closeness(doc._score, ranking.top) : null;
+  return el("button", { type: "button", class: "tile" + (snippet ? " result" : "") + (close ? ` rank-${close.cls}` : ""), "aria-label": doc.product_name || "Label", onclick: () => openLabel(doc.id) },
     el("span", { class: "sq", style: image ? `background-image:${cssUrl(image)}` : null }),
     el("span", { class: "meta" },
       el("span", { class: "nm", text: doc.product_name || "Unnamed label" }),
       el("span", { class: "lg", text: doc.language ? langName(doc.language) : "Language not set" }),
+      close ? el("span", { class: `closeness ${close.cls}`, text: `${close.text} · ${doc._score.toFixed(2)}` }) : null,
       snippet));
 }
 

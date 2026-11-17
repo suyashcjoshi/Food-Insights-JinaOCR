@@ -77,6 +77,9 @@
 <text x="890" y="526" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="11.5" font-weight="500" fill="#605F60" text-anchor="middle">creates the index, one time</text>
 <line x1="802" y1="560" x2="978" y2="560" stroke="#0B64DD" stroke-width="3" marker-end="url(#h-0B64DD)"/>
 <text x="890" y="548" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#0B64DD" text-anchor="middle">index</text>
+<rect x="804.0" y="606" width="172" height="28" rx="14.0" fill="#EF5098"/>
+<text x="890" y="624.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="10" font-weight="700" fill="#fff" text-anchor="middle">POST /food_labels/_search</text>
+<line x1="802" y1="650" x2="978" y2="650" stroke="#EF5098" stroke-width="3" marker-end="url(#h-EF5098)"/>
 <line x1="978" y1="700" x2="802" y2="700" stroke="#EF5098" stroke-width="3" marker-end="url(#h-EF5098)"/>
-<text x="890" y="688" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#EF5098" text-anchor="middle">hits</text>
+<text x="890" y="722" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#EF5098" text-anchor="middle">hits</text>
 </svg>

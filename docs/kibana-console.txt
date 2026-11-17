@@ -1,15 +1,17 @@
 # Check that the reader endpoint exists
 GET _inference/_all
 
-# Extract text from an image URL (the filter returns only the Markdown)
+# Extract text from a photo (TREK flapjack, docs/demo-trek-label.jpg). Make the string first:
+#   echo "data:image/jpeg;base64,$(base64 -i docs/demo-trek-label.jpg)" | pbcopy
+# then paste it over PASTE_BASE64_HERE. For a public image link use "format": "url" and "value": "https://..."
 POST _inference/document_extraction/.jina-reader?filter_path=document_extraction.content
 {
   "input": [
     {
       "content": {
         "type": "image",
-        "format": "url",
-        "value": "https://images.openfoodfacts.org/images/products/807/680/952/3547/nutrition_de.380.full.jpg"
+        "format": "base64",
+        "value": "PASTE_BASE64_HERE"
       }
     }
   ],

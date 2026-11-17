@@ -55,6 +55,7 @@ UNITS = {
     "calcium_mg": "mg",
     "iron_mg": "mg",
     "potassium_mg": "mg",
+    "manganese_mg": "mg",
     "vitamin_a_mcg": "mcg",
 }
 
@@ -97,6 +98,7 @@ LABELS: dict[str, str] = {
     "iron_mg": r"iron|fer|eisen|hierro|ferro",
     "potassium_mg": r"potassium|kalium|potasio|pot\w+ssio",
     "vitamin_a_mcg": r"vitamin a|vitamine a|vitamina a",
+    "manganese_mg": r"manganese|mangan\w*",  # en/it, fr manganèse, de Mangan, es manganeso, pt manganês
 }
 LABELS = {k: v.replace(r"\w", r"[^\W\d_]") for k, v in LABELS.items()}
 # A label is a whole word, or (for glued OCR text) an Uppercase label glued onto a lowercase/digit.

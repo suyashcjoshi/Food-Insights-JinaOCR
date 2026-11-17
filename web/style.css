@@ -836,3 +836,10 @@ button.chip[aria-checked="true"] {
 .lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .lightbox-close { position: absolute; top: 10px; right: 12px; width: 44px; height: 44px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.18); color: #fff; font-size: 28px; line-height: 1; cursor: pointer; }
 .zoomable { cursor: zoom-in; }
+
+/* meaning search: how close each result is to the query, relative to the best one */
+.closeness { justify-self: start; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; font-variant-numeric: tabular-nums; border: 1px solid var(--rule); color: var(--ink-2); background: var(--paper); }
+.closeness.best { background: var(--hi); color: var(--on-hi); border-color: transparent; }
+.closeness.near { background: var(--amber-paper); color: var(--amber-ink); border-color: transparent; }
+.tile.rank-weak { opacity: 0.6; }
+.tile.rank-related { opacity: 0.85; }

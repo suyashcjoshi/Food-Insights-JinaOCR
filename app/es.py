@@ -18,6 +18,9 @@ load_dotenv()
 KINDS = ("contains", "may_contain")
 SOURCES = ("demo", "kitchen", "off")  # where a label came from; anything else is rejected
 SEARCH_FIELDS = ["product_name^3", "plain_text", "unverified_text"]  # product name counts triple
+# One typo is forgiven from 5 letters, two only from 12. Plain AUTO allowed two edits at 6 letters,
+# so "peanut" matched "planet". Short words must match exactly.
+FUZZINESS = "AUTO:5,12"
 HIGHLIGHT = {
     "encoder": "html",  # model text is escaped; only our own <mark> tags are real markup
     "fields": {"plain_text": {}, "unverified_text": {}},
@@ -50,6 +53,7 @@ NUTRIENT_FIELDS = (
     "calcium_mg",
     "iron_mg",
     "potassium_mg",
+    "manganese_mg",
     "vitamin_a_mcg",
 )
 
@@ -213,7 +217,7 @@ def _query(q: str, filters: list[dict], mode: str = "words") -> dict:
     if mode == "meaning":
         text = {"semantic": {"field": "meaning", "query": q}}
     else:
-        text = {"multi_match": {"query": q, "fields": SEARCH_FIELDS, "fuzziness": "AUTO"}}
+        text = {"multi_match": {"query": q, "fields": SEARCH_FIELDS, "fuzziness": FUZZINESS}}
     return {"bool": {"must": [text] if q.strip() else [{"match_all": {}}], "filter": filters}}
 
 

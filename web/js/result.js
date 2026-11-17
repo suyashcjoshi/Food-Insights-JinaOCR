@@ -24,6 +24,7 @@ const NUTRIENT_ROWS = [
   { key: "potassium_mg", label: "Potassium", unit: "mg" },
   { key: "calcium_mg", label: "Calcium", unit: "mg" },
   { key: "iron_mg", label: "Iron", unit: "mg" },
+  { key: "manganese_mg", label: "Manganese", unit: "mg" },
   { key: "vitamin_d_mcg", label: "Vitamin D", unit: "mcg" },
   { key: "vitamin_a_mcg", label: "Vitamin A", unit: "mcg" },
 ];
